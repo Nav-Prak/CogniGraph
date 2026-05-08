@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from cognigraph.fixture.loader import FixtureValidationError, load_fixture, validate_references
 from cognigraph.fixture.models import (
     AgentConfig,
     AnalysisConfig,
@@ -13,6 +14,10 @@ from cognigraph.fixture.models import (
     ToolConfig,
 )
 from cognigraph.schemas.enums import ResourceType, SourceType
+
+from pathlib import Path
+
+FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 
 
 class TestAnalysisConfig:
@@ -173,3 +178,76 @@ class TestFixtureConfig:
         assert len(cfg.tools) == 2
         assert len(cfg.capabilities) == 4
         assert len(cfg.capability_bindings) == 2
+
+
+class TestLoadFixture:
+    def test_load_sample(self):
+        config = load_fixture(FIXTURES_DIR / "sample_fixture.yaml")
+        assert len(config.agents) == 1
+        assert len(config.tools) == 2
+        assert len(config.capabilities) == 4
+        assert len(config.resources) == 2
+        assert len(config.capability_bindings) == 2
+        assert config.analysis.max_tool_invocation_depth == 5
+
+
+class TestValidateReferences:
+    def test_valid_config_passes(self):
+        config = load_fixture(FIXTURES_DIR / "sample_fixture.yaml")
+        validate_references(config)
+
+    def test_bad_agent_consumes(self):
+        config = FixtureConfig(
+            agents=[AgentConfig(id="a", trust_level=1, consumes=["nonexistent"])],
+        )
+        with pytest.raises(FixtureValidationError, match="unknown context source"):
+            validate_references(config)
+
+    def test_bad_agent_invokes(self):
+        config = FixtureConfig(
+            agents=[AgentConfig(id="a", trust_level=1, can_invoke=["ghost_tool"])],
+        )
+        with pytest.raises(FixtureValidationError, match="unknown tool"):
+            validate_references(config)
+
+    def test_bad_tool_mcp_server(self):
+        config = FixtureConfig(
+            tools=[ToolConfig(id="t", mcp_server="ghost_server")],
+        )
+        with pytest.raises(FixtureValidationError, match="unknown MCP server"):
+            validate_references(config)
+
+    def test_bad_tool_capability(self):
+        config = FixtureConfig(
+            tools=[ToolConfig(id="t", capabilities=["FakeCapability"])],
+        )
+        with pytest.raises(FixtureValidationError, match="unknown capability"):
+            validate_references(config)
+
+    def test_bad_binding_capability(self):
+        config = FixtureConfig(
+            capability_bindings=[CapabilityBinding(capability="Fake", resource="r")],
+            resources=[ResourceConfig(id="r", type=ResourceType.SECRET, sensitivity=3)],
+        )
+        with pytest.raises(FixtureValidationError, match="unknown capability"):
+            validate_references(config)
+
+    def test_bad_binding_resource(self):
+        config = FixtureConfig(
+            capability_bindings=[CapabilityBinding(capability="c", resource="Fake")],
+            capabilities=[CapabilityConfig(id="c", severity=3)],
+        )
+        with pytest.raises(FixtureValidationError, match="unknown resource"):
+            validate_references(config)
+
+    def test_multiple_errors_collected(self):
+        config = FixtureConfig(
+            agents=[
+                AgentConfig(
+                    id="a", trust_level=1,
+                    consumes=["ghost1"], can_invoke=["ghost2"],
+                ),
+            ],
+        )
+        with pytest.raises(FixtureValidationError, match="2 error"):
+            validate_references(config)
