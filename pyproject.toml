@@ -17,6 +17,9 @@ dev = [
     "pytest-cov>=5.0",
 ]
 
+[project.scripts]
+cognigraph = "cognigraph.cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
