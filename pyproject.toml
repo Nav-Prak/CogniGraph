@@ -8,6 +8,7 @@ dependencies = [
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "networkx>=3.0",
+    "neo4j>=5.0",
 ]
 
 [dependency-groups]
@@ -25,3 +26,6 @@ packages = ["src/cognigraph"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "neo4j: tests requiring a running Neo4j instance",
+]

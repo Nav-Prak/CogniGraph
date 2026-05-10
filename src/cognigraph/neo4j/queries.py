@@ -1,0 +1,253 @@
+from __future__ import annotations
+
+from cognigraph.fixture.models import AnalysisConfig
+from cognigraph.neo4j.client import Neo4jClient
+from cognigraph.rules.engine import DANGEROUS_PAIRS
+from cognigraph.schemas.findings import Finding, FindingSeverity
+
+
+def _path_node_ids(path) -> list[str]:
+    return [node["id"] for node in path.nodes]
+
+
+def low_trust_to_critical_capability(
+    client: Neo4jClient, config: AnalysisConfig
+) -> list[Finding]:
+    depth = config.max_tool_invocation_depth
+    cypher = (
+        "MATCH path = "
+        "(source:ContextSource)-[:CONSUMED_BY]->"
+        "(agent:Agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
+        "(tool:Tool)-[:EXPOSES_CAPABILITY]->"
+        "(capability:Capability) "
+        "WHERE source.trust_level <= 1 "
+        "AND capability.severity >= 3 "
+        "RETURN source, agent, tool, capability, path"
+    )
+    rows = client.run_query(cypher)
+    findings: list[Finding] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        src = row["source"]
+        cap = row["capability"]
+        agent = row["agent"]
+        tool = row["tool"]
+        key = (src["id"], cap["id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        findings.append(Finding(
+            rule_id="R001",
+            title="Low-trust context reaches critical capability",
+            description=(
+                f"Low-trust context '{src['id']}' can reach "
+                f"capability '{cap['id']}' (severity {cap['severity']})"
+            ),
+            severity=FindingSeverity.CRITICAL if cap["severity"] >= 4 else FindingSeverity.HIGH,
+            path=[src["id"], agent["id"], tool["id"], cap["id"]],
+            entities={
+                "context_source": src["id"],
+                "agent": agent["id"],
+                "capability": cap["id"],
+            },
+        ))
+    return findings
+
+
+def low_trust_to_sensitive_resource(
+    client: Neo4jClient, config: AnalysisConfig
+) -> list[Finding]:
+    depth = config.max_tool_invocation_depth
+    cypher = (
+        "MATCH path = "
+        "(source:ContextSource)-[:CONSUMED_BY]->"
+        "(agent:Agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
+        "(tool:Tool)-[:EXPOSES_CAPABILITY]->"
+        "(capability:Capability)-[:CAN_ACCESS_RESOURCE]->"
+        "(resource:Resource) "
+        "WHERE source.trust_level <= 1 "
+        "AND resource.sensitivity >= 3 "
+        "RETURN source, agent, tool, capability, resource"
+    )
+    rows = client.run_query(cypher)
+    findings: list[Finding] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        src = row["source"]
+        res = row["resource"]
+        agent = row["agent"]
+        tool = row["tool"]
+        cap = row["capability"]
+        key = (src["id"], res["id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        findings.append(Finding(
+            rule_id="R002",
+            title="Low-trust context reaches sensitive resource",
+            description=(
+                f"Low-trust context '{src['id']}' can reach "
+                f"resource '{res['id']}' (sensitivity {res['sensitivity']}) "
+                f"via capability '{cap['id']}'"
+            ),
+            severity=FindingSeverity.CRITICAL if res["sensitivity"] >= 4 else FindingSeverity.HIGH,
+            path=[src["id"], agent["id"], tool["id"], cap["id"], res["id"]],
+            entities={
+                "context_source": src["id"],
+                "agent": agent["id"],
+                "capability": cap["id"],
+                "resource": res["id"],
+            },
+        ))
+    return findings
+
+
+def dangerous_capability_composition(
+    client: Neo4jClient, config: AnalysisConfig
+) -> list[Finding]:
+    depth = config.max_tool_invocation_depth
+    where_clauses = []
+    for cap_a, cap_b in DANGEROUS_PAIRS:
+        where_clauses.append(
+            f'(cap1.id = "{cap_a}" AND cap2.id = "{cap_b}")'
+        )
+    where_str = " OR ".join(where_clauses)
+    cypher = (
+        "MATCH "
+        "(agent:Agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
+        "(:Tool)-[:EXPOSES_CAPABILITY]->"
+        "(cap1:Capability), "
+        "(agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
+        "(:Tool)-[:EXPOSES_CAPABILITY]->"
+        "(cap2:Capability) "
+        "WHERE " + where_str + " "
+        "RETURN DISTINCT agent, cap1, cap2"
+    )
+    rows = client.run_query(cypher)
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        agent = row["agent"]
+        cap1 = row["cap1"]
+        cap2 = row["cap2"]
+        key = (agent["id"], cap1["id"], cap2["id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        findings.append(Finding(
+            rule_id="R003",
+            title="Dangerous capability composition",
+            description=(
+                f"Agent '{agent['id']}' can reach both "
+                f"'{cap1['id']}' and '{cap2['id']}'"
+            ),
+            severity=FindingSeverity.HIGH,
+            path=[agent["id"], cap1["id"], cap2["id"]],
+            entities={
+                "agent": agent["id"],
+                "capability_a": cap1["id"],
+                "capability_b": cap2["id"],
+            },
+        ))
+    return findings
+
+
+def overprivileged_mcp_exposure(
+    client: Neo4jClient, config: AnalysisConfig
+) -> list[Finding]:
+    threshold = config.overexposure_agent_threshold
+    cypher = (
+        "MATCH (agent:Agent)-[:CAN_INVOKE]->(tool:Tool)-[:USES_SERVER]->(server:MCPServer), "
+        "(tool)-[:EXPOSES_CAPABILITY]->(cap:Capability) "
+        "WHERE cap.severity >= 3 "
+        "WITH server, collect(DISTINCT agent.id) AS agents "
+        "WHERE size(agents) >= $threshold "
+        "RETURN server, agents"
+    )
+    rows = client.run_query(cypher, threshold=threshold)
+    findings: list[Finding] = []
+    for row in rows:
+        server = row["server"]
+        agents = row["agents"]
+        findings.append(Finding(
+            rule_id="R004",
+            title="Overprivileged MCP exposure",
+            description=(
+                f"MCP server '{server['id']}' backs critical tools "
+                f"invokable by {len(agents)} agents "
+                f"(threshold: {threshold})"
+            ),
+            severity=FindingSeverity.HIGH,
+            path=[server["id"]] + sorted(agents),
+            entities={
+                "mcp_server": server["id"],
+                "agent_count": str(len(agents)),
+            },
+        ))
+    return findings
+
+
+def trust_boundary_crossing(
+    client: Neo4jClient, config: AnalysisConfig
+) -> list[Finding]:
+    depth = config.max_tool_invocation_depth
+    cypher = (
+        "MATCH path = "
+        "(source:ContextSource)-[:CONSUMED_BY]->"
+        "(agent:Agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
+        "(tool:Tool)-[:EXPOSES_CAPABILITY]->"
+        "(capability:Capability) "
+        "WHERE agent.trust_level >= 2 "
+        "AND source.trust_level <= 1 "
+        "AND capability.severity >= 3 "
+        "RETURN source, agent, tool, capability"
+    )
+    rows = client.run_query(cypher)
+    findings: list[Finding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        src = row["source"]
+        agent = row["agent"]
+        tool = row["tool"]
+        cap = row["capability"]
+        key = (src["id"], agent["id"], cap["id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        findings.append(Finding(
+            rule_id="R005",
+            title="Trust boundary crossing",
+            description=(
+                f"Low-trust context '{src['id']}' enters "
+                f"higher-trust agent '{agent['id']}' "
+                f"(trust_level {agent['trust_level']}) "
+                f"with critical downstream capability '{cap['id']}'"
+            ),
+            severity=FindingSeverity.CRITICAL,
+            path=[src["id"], agent["id"], tool["id"], cap["id"]],
+            entities={
+                "context_source": src["id"],
+                "agent": agent["id"],
+                "capability": cap["id"],
+            },
+        ))
+    return findings
+
+
+ALL_CYPHER_RULES = [
+    low_trust_to_critical_capability,
+    low_trust_to_sensitive_resource,
+    dangerous_capability_composition,
+    overprivileged_mcp_exposure,
+    trust_boundary_crossing,
+]
+
+
+def run_all_cypher_rules(
+    client: Neo4jClient, config: AnalysisConfig
+) -> list[Finding]:
+    findings: list[Finding] = []
+    for rule in ALL_CYPHER_RULES:
+        findings.extend(rule(client, config))
+    findings.sort(key=lambda f: (f.rule_id, f.path))
+    return findings
