@@ -3,7 +3,12 @@ from __future__ import annotations
 import networkx as nx
 
 from cognigraph.fixture.models import FixtureConfig
+from cognigraph.schemas.edges import validate_edge_types
 from cognigraph.schemas.enums import EdgeType, NodeType
+
+
+class InvalidEdgeError(Exception):
+    pass
 
 
 class CogniGraph:
@@ -24,6 +29,18 @@ class CogniGraph:
     def add_edge(
         self, source_id: str, target_id: str, edge_type: EdgeType
     ) -> None:
+        src_data = self._graph.nodes.get(source_id)
+        tgt_data = self._graph.nodes.get(target_id)
+        if src_data is None:
+            raise InvalidEdgeError(f"Source node '{source_id}' does not exist")
+        if tgt_data is None:
+            raise InvalidEdgeError(f"Target node '{target_id}' does not exist")
+        src_type = src_data["node_type"]
+        tgt_type = tgt_data["node_type"]
+        if not validate_edge_types(src_type, edge_type, tgt_type):
+            raise InvalidEdgeError(
+                f"Invalid edge: {src_type.value} -[{edge_type.value}]-> {tgt_type.value}"
+            )
         self._graph.add_edge(source_id, target_id, edge_type=edge_type)
 
     def get_node(self, node_id: str) -> dict:
@@ -49,28 +66,38 @@ class CogniGraph:
                 result.append(source)
         return result
 
-    def get_reachable_by_invocation(
+    def get_reachable_with_paths(
         self, start_id: str, max_depth: int
-    ) -> set[str]:
+    ) -> dict[str, list[str]]:
+        paths: dict[str, list[str]] = {}
+        queue: list[tuple[str, int, list[str]]] = [(start_id, 0, [start_id])]
         visited: set[str] = set()
-        queue = [(start_id, 0)]
         while queue:
-            current, depth = queue.pop(0)
+            current, depth, path = queue.pop(0)
             if current in visited:
                 continue
             visited.add(current)
+            if current != start_id:
+                paths[current] = path
             if depth < max_depth:
                 for succ in self.get_successors(current, EdgeType.CAN_INVOKE):
                     if succ not in visited:
-                        queue.append((succ, depth + 1))
-        visited.discard(start_id)
-        return visited
+                        queue.append((succ, depth + 1, path + [succ]))
+        return paths
 
     def get_capabilities_of_tool(self, tool_id: str) -> list[str]:
         return self.get_successors(tool_id, EdgeType.EXPOSES_CAPABILITY)
 
     def get_resources_of_capability(self, capability_id: str) -> list[str]:
         return self.get_successors(capability_id, EdgeType.CAN_ACCESS_RESOURCE)
+
+    def get_agents_reaching_tool(self, tool_id: str, max_depth: int) -> set[str]:
+        agents: set[str] = set()
+        for agent_id in self.get_nodes_by_type(NodeType.AGENT):
+            reachable = self.get_reachable_with_paths(agent_id, max_depth)
+            if tool_id in reachable:
+                agents.add(agent_id)
+        return agents
 
 
 def build_from_fixture(config: FixtureConfig) -> CogniGraph:

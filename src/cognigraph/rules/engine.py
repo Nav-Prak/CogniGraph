@@ -12,19 +12,16 @@ DANGEROUS_PAIRS: list[tuple[str, str]] = [
 ]
 
 
-def _reachable_tools(graph: CogniGraph, agent_id: str, max_depth: int) -> set[str]:
-    return graph.get_reachable_by_invocation(agent_id, max_depth)
-
-
-def _reachable_capabilities(
+def _reachable_capabilities_with_paths(
     graph: CogniGraph, agent_id: str, max_depth: int
 ) -> dict[str, list[str]]:
-    tools = _reachable_tools(graph, agent_id, max_depth)
-    cap_to_tools: dict[str, list[str]] = {}
-    for tool_id in tools:
+    tool_paths = graph.get_reachable_with_paths(agent_id, max_depth)
+    cap_to_path: dict[str, list[str]] = {}
+    for tool_id, tool_path in tool_paths.items():
         for cap_id in graph.get_capabilities_of_tool(tool_id):
-            cap_to_tools.setdefault(cap_id, []).append(tool_id)
-    return cap_to_tools
+            if cap_id not in cap_to_path:
+                cap_to_path[cap_id] = tool_path + [cap_id]
+    return cap_to_path
 
 
 def low_trust_to_critical_capability(
@@ -36,13 +33,13 @@ def low_trust_to_critical_capability(
         if cs["trust_level"] > 1:
             continue
         for agent_id in graph.get_successors(cs_id, EdgeType.CONSUMED_BY):
-            cap_to_tools = _reachable_capabilities(
+            cap_paths = _reachable_capabilities_with_paths(
                 graph, agent_id, config.max_tool_invocation_depth
             )
-            for cap_id, tool_ids in cap_to_tools.items():
+            for cap_id, tool_path in cap_paths.items():
                 cap = graph.get_node(cap_id)
                 if cap["severity"] >= 3:
-                    path = [cs_id, agent_id, tool_ids[0], cap_id]
+                    path = [cs_id] + tool_path
                     findings.append(Finding(
                         rule_id="R001",
                         title="Low-trust context reaches critical capability",
@@ -71,14 +68,14 @@ def low_trust_to_sensitive_resource(
         if cs["trust_level"] > 1:
             continue
         for agent_id in graph.get_successors(cs_id, EdgeType.CONSUMED_BY):
-            cap_to_tools = _reachable_capabilities(
+            cap_paths = _reachable_capabilities_with_paths(
                 graph, agent_id, config.max_tool_invocation_depth
             )
-            for cap_id, tool_ids in cap_to_tools.items():
+            for cap_id, tool_path in cap_paths.items():
                 for res_id in graph.get_resources_of_capability(cap_id):
                     res = graph.get_node(res_id)
                     if res["sensitivity"] >= 3:
-                        path = [cs_id, agent_id, tool_ids[0], cap_id, res_id]
+                        path = [cs_id] + tool_path + [res_id]
                         findings.append(Finding(
                             rule_id="R002",
                             title="Low-trust context reaches sensitive resource",
@@ -105,11 +102,10 @@ def dangerous_capability_composition(
 ) -> list[Finding]:
     findings: list[Finding] = []
     for agent_id in graph.get_nodes_by_type(NodeType.AGENT):
-        cap_ids = set(
-            _reachable_capabilities(
-                graph, agent_id, config.max_tool_invocation_depth
-            ).keys()
+        cap_paths = _reachable_capabilities_with_paths(
+            graph, agent_id, config.max_tool_invocation_depth
         )
+        cap_ids = set(cap_paths.keys())
         for cap_a, cap_b in DANGEROUS_PAIRS:
             if cap_a in cap_ids and cap_b in cap_ids:
                 findings.append(Finding(
@@ -149,10 +145,11 @@ def overprivileged_mcp_exposure(
 
         invoking_agents: set[str] = set()
         for tool_id in critical_tools:
-            for agent_id in graph.get_predecessors(tool_id, EdgeType.CAN_INVOKE):
-                node = graph.get_node(agent_id)
-                if node.get("node_type") == NodeType.AGENT:
-                    invoking_agents.add(agent_id)
+            invoking_agents.update(
+                graph.get_agents_reaching_tool(
+                    tool_id, config.max_tool_invocation_depth
+                )
+            )
 
         if len(invoking_agents) >= config.overexposure_agent_threshold:
             findings.append(Finding(
@@ -191,14 +188,14 @@ def trust_boundary_crossing(
         if not low_trust_sources:
             continue
 
-        cap_to_tools = _reachable_capabilities(
+        cap_paths = _reachable_capabilities_with_paths(
             graph, agent_id, config.max_tool_invocation_depth
         )
-        for cap_id, tool_ids in cap_to_tools.items():
+        for cap_id, tool_path in cap_paths.items():
             cap = graph.get_node(cap_id)
             if cap["severity"] >= 3:
                 for cs_id in low_trust_sources:
-                    path = [cs_id, agent_id, tool_ids[0], cap_id]
+                    path = [cs_id] + tool_path
                     findings.append(Finding(
                         rule_id="R005",
                         title="Trust boundary crossing",

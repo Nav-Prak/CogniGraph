@@ -1,22 +1,15 @@
 import pytest
 
 from cognigraph.fixture.models import FixtureConfig
-from cognigraph.graph.builder import CogniGraph, build_from_fixture
+from cognigraph.graph.builder import CogniGraph, InvalidEdgeError, build_from_fixture
 from cognigraph.schemas.enums import EdgeType, NodeType
 
 
 class TestBuildFromFixture:
     def test_node_count(self, sample_graph: CogniGraph):
-        # 1 context_source + 1 agent + 2 tools + 2 mcp_servers + 4 capabilities + 2 resources = 12
         assert sample_graph.node_count == 12
 
     def test_edge_count(self, sample_graph: CogniGraph):
-        # CONSUMED_BY: 1 (webpage -> agent)
-        # CAN_INVOKE: 2 (agent -> fs_tool, agent -> gh_tool)
-        # EXPOSES_CAPABILITY: 4 (fs_tool -> 2 caps, gh_tool -> 2 caps)
-        # USES_SERVER: 2 (fs_tool -> fs_mcp, gh_tool -> gh_mcp)
-        # CAN_ACCESS_RESOURCE: 2 (SecretRead -> ssh_key, GitHubPush -> repo)
-        # Total: 11
         assert sample_graph.edge_count == 11
 
     def test_context_source_nodes(self, sample_graph: CogniGraph):
@@ -54,6 +47,34 @@ class TestBuildFromFixture:
         assert res["sensitivity"] == 4
 
 
+class TestEdgeValidation:
+    def test_rejects_invalid_edge(self):
+        graph = CogniGraph()
+        graph.add_node("cs", NodeType.CONTEXT_SOURCE, trust_level=0, source_type="webpage")
+        graph.add_node("cap", NodeType.CAPABILITY, severity=3)
+        with pytest.raises(InvalidEdgeError, match="Invalid edge"):
+            graph.add_edge("cs", "cap", EdgeType.CONSUMED_BY)
+
+    def test_rejects_missing_source(self):
+        graph = CogniGraph()
+        graph.add_node("tgt", NodeType.TOOL)
+        with pytest.raises(InvalidEdgeError, match="does not exist"):
+            graph.add_edge("missing", "tgt", EdgeType.CAN_INVOKE)
+
+    def test_rejects_missing_target(self):
+        graph = CogniGraph()
+        graph.add_node("src", NodeType.AGENT, trust_level=2)
+        with pytest.raises(InvalidEdgeError, match="does not exist"):
+            graph.add_edge("src", "missing", EdgeType.CAN_INVOKE)
+
+    def test_accepts_valid_edge(self):
+        graph = CogniGraph()
+        graph.add_node("a", NodeType.AGENT, trust_level=2)
+        graph.add_node("t", NodeType.TOOL)
+        graph.add_edge("a", "t", EdgeType.CAN_INVOKE)
+        assert graph.edge_count == 1
+
+
 class TestCogniGraphQueries:
     def test_consumed_by_edges(self, sample_graph: CogniGraph):
         agents = sample_graph.get_successors("external_webpage", EdgeType.CONSUMED_BY)
@@ -75,10 +96,15 @@ class TestCogniGraphQueries:
         servers = sample_graph.get_successors("filesystem_tool", EdgeType.USES_SERVER)
         assert servers == ["filesystem_mcp"]
 
-    def test_reachable_by_invocation(self, sample_graph: CogniGraph):
-        tools = sample_graph.get_reachable_by_invocation("planner_agent", 5)
-        assert tools == {"filesystem_tool", "github_tool"}
+    def test_reachable_with_paths(self, sample_graph: CogniGraph):
+        paths = sample_graph.get_reachable_with_paths("planner_agent", 5)
+        assert set(paths.keys()) == {"filesystem_tool", "github_tool"}
+        assert paths["filesystem_tool"] == ["planner_agent", "filesystem_tool"]
 
     def test_predecessors(self, sample_graph: CogniGraph):
         preds = sample_graph.get_predecessors("planner_agent", EdgeType.CONSUMED_BY)
         assert preds == ["external_webpage"]
+
+    def test_agents_reaching_tool(self, sample_graph: CogniGraph):
+        agents = sample_graph.get_agents_reaching_tool("filesystem_tool", 5)
+        assert agents == {"planner_agent"}

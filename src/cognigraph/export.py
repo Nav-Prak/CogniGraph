@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from cognigraph.graph.builder import CogniGraph
@@ -25,6 +26,14 @@ _NODE_COLORS: dict[NodeType, str] = {
     NodeType.RESOURCE: "#457b9d",
     NodeType.EXECUTION_ENVIRONMENT: "#a8dadc",
 }
+
+
+def _dot_escape(s: str) -> str:
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _dot_id(node_id: str, node_type: NodeType) -> str:
+    return f'"{_dot_escape(node_type.value)}:{_dot_escape(node_id)}"'
 
 
 def to_dot(graph: CogniGraph, highlight_paths: list[list[str]] | None = None) -> str:
@@ -53,10 +62,10 @@ def to_dot(graph: CogniGraph, highlight_paths: list[list[str]] | None = None) ->
             label_parts.append(f"sev={data['severity']}")
         if "sensitivity" in data:
             label_parts.append(f"sens={data['sensitivity']}")
-        label = "\\n".join(label_parts)
-        safe_id = node_id.replace("-", "_").replace(" ", "_")
+        label = _dot_escape("\\n".join(label_parts))
+        did = _dot_id(node_id, node_type)
         lines.append(
-            f'  {safe_id} [label="{label}", shape={shape}, '
+            f'  {did} [label="{label}", shape={shape}, '
             f'fillcolor="{color}", fontcolor="white"];'
         )
 
@@ -64,13 +73,17 @@ def to_dot(graph: CogniGraph, highlight_paths: list[list[str]] | None = None) ->
 
     for src, tgt, data in graph._graph.edges(data=True):
         edge_type = data.get("edge_type", "")
-        label = edge_type.value if isinstance(edge_type, EdgeType) else str(edge_type)
-        safe_src = src.replace("-", "_").replace(" ", "_")
-        safe_tgt = tgt.replace("-", "_").replace(" ", "_")
+        label = _dot_escape(
+            edge_type.value if isinstance(edge_type, EdgeType) else str(edge_type)
+        )
+        src_type = graph._graph.nodes[src].get("node_type", NodeType.TOOL)
+        tgt_type = graph._graph.nodes[tgt].get("node_type", NodeType.TOOL)
+        src_did = _dot_id(src, src_type)
+        tgt_did = _dot_id(tgt, tgt_type)
         style = ""
         if (src, tgt) in highlight_edges:
             style = ', color="red", penwidth=2.0'
-        lines.append(f'  {safe_src} -> {safe_tgt} [label="{label}"{style}];')
+        lines.append(f'  {src_did} -> {tgt_did} [label="{label}"{style}];')
 
     lines.append("}")
     return "\n".join(lines)

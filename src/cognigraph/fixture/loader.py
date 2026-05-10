@@ -19,15 +19,38 @@ def load_fixture(path: Path) -> FixtureConfig:
     return config
 
 
+def _collect_ids(config: FixtureConfig) -> dict[str, list[str]]:
+    id_to_types: dict[str, list[str]] = {}
+    for cs in config.context_sources:
+        id_to_types.setdefault(cs.id, []).append("context_source")
+    for a in config.agents:
+        id_to_types.setdefault(a.id, []).append("agent")
+    for t in config.tools:
+        id_to_types.setdefault(t.id, []).append("tool")
+    for s in config.mcp_servers:
+        id_to_types.setdefault(s.id, []).append("mcp_server")
+    for c in config.capabilities:
+        id_to_types.setdefault(c.id, []).append("capability")
+    for r in config.resources:
+        id_to_types.setdefault(r.id, []).append("resource")
+    return id_to_types
+
+
 def validate_references(config: FixtureConfig) -> None:
+    errors: list[str] = []
+
+    id_to_types = _collect_ids(config)
+    for node_id, types in id_to_types.items():
+        if len(types) > 1:
+            errors.append(
+                f"Duplicate ID '{node_id}' used across node types: {', '.join(types)}"
+            )
+
     context_source_ids = {cs.id for cs in config.context_sources}
-    agent_ids = {a.id for a in config.agents}
     tool_ids = {t.id for t in config.tools}
     mcp_server_ids = {s.id for s in config.mcp_servers}
     capability_ids = {c.id for c in config.capabilities}
     resource_ids = {r.id for r in config.resources}
-
-    errors: list[str] = []
 
     for agent in config.agents:
         for cs_id in agent.consumes:

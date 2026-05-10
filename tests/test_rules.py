@@ -25,6 +25,14 @@ class TestLowTrustToCriticalCapability:
             assert f.entities["context_source"] == "external_webpage"
             assert f.rule_id == "R001"
 
+    def test_full_path(self, sample_graph: CogniGraph, sample_config: FixtureConfig):
+        findings = low_trust_to_critical_capability(sample_graph, sample_config.analysis)
+        for f in findings:
+            assert f.path[0] == "external_webpage"
+            assert f.path[1] == "planner_agent"
+            assert f.path[-1] == f.entities["capability"]
+            assert len(f.path) >= 4
+
 
 class TestLowTrustToSensitiveResource:
     def test_finds_resource_paths(self, sample_graph: CogniGraph, sample_config: FixtureConfig):
@@ -33,10 +41,14 @@ class TestLowTrustToSensitiveResource:
         res_ids = {f.entities["resource"] for f in findings}
         assert res_ids == {"ssh_private_key", "github_repository"}
 
-    def test_path_includes_capability(self, sample_graph: CogniGraph, sample_config: FixtureConfig):
+    def test_full_path(self, sample_graph: CogniGraph, sample_config: FixtureConfig):
         findings = low_trust_to_sensitive_resource(sample_graph, sample_config.analysis)
         for f in findings:
-            assert len(f.path) == 5
+            assert f.path[0] == "external_webpage"
+            assert f.path[1] == "planner_agent"
+            assert f.path[-1] == f.entities["resource"]
+            assert f.path[-2] == f.entities["capability"]
+            assert len(f.path) >= 5
             assert f.rule_id == "R002"
 
 
@@ -54,7 +66,6 @@ class TestDangerousCapabilityComposition:
 class TestOverprivilegedMCPExposure:
     def test_no_findings_below_threshold(self, sample_graph: CogniGraph, sample_config: FixtureConfig):
         findings = overprivileged_mcp_exposure(sample_graph, sample_config.analysis)
-        # Only 1 agent invokes each server's tools, threshold is 3
         assert len(findings) == 0
 
     def test_triggers_at_threshold(self, sample_graph: CogniGraph):
@@ -76,6 +87,14 @@ class TestTrustBoundaryCrossing:
         findings = trust_boundary_crossing(sample_graph, sample_config.analysis)
         cap_ids = {f.entities["capability"] for f in findings}
         assert cap_ids == {"SecretRead", "FilesystemRead", "GitHubPush", "ExternalNetworkSend"}
+
+    def test_full_path(self, sample_graph: CogniGraph, sample_config: FixtureConfig):
+        findings = trust_boundary_crossing(sample_graph, sample_config.analysis)
+        for f in findings:
+            assert f.path[0] == "external_webpage"
+            assert f.path[1] == "planner_agent"
+            assert f.path[-1] == f.entities["capability"]
+            assert len(f.path) >= 4
 
 
 class TestRunAllRules:

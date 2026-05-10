@@ -22,7 +22,7 @@ def low_trust_to_critical_capability(
         "(capability:Capability) "
         "WHERE source.trust_level <= 1 "
         "AND capability.severity >= 3 "
-        "RETURN source, agent, tool, capability, path"
+        "RETURN source, capability, path"
     )
     rows = client.run_query(cypher)
     findings: list[Finding] = []
@@ -30,12 +30,12 @@ def low_trust_to_critical_capability(
     for row in rows:
         src = row["source"]
         cap = row["capability"]
-        agent = row["agent"]
-        tool = row["tool"]
         key = (src["id"], cap["id"])
         if key in seen:
             continue
         seen.add(key)
+        full_path = _path_node_ids(row["path"])
+        agent_id = full_path[1] if len(full_path) > 1 else src["id"]
         findings.append(Finding(
             rule_id="R001",
             title="Low-trust context reaches critical capability",
@@ -44,10 +44,10 @@ def low_trust_to_critical_capability(
                 f"capability '{cap['id']}' (severity {cap['severity']})"
             ),
             severity=FindingSeverity.CRITICAL if cap["severity"] >= 4 else FindingSeverity.HIGH,
-            path=[src["id"], agent["id"], tool["id"], cap["id"]],
+            path=full_path,
             entities={
                 "context_source": src["id"],
-                "agent": agent["id"],
+                "agent": agent_id,
                 "capability": cap["id"],
             },
         ))
@@ -67,7 +67,7 @@ def low_trust_to_sensitive_resource(
         "(resource:Resource) "
         "WHERE source.trust_level <= 1 "
         "AND resource.sensitivity >= 3 "
-        "RETURN source, agent, tool, capability, resource"
+        "RETURN source, capability, resource, path"
     )
     rows = client.run_query(cypher)
     findings: list[Finding] = []
@@ -75,13 +75,13 @@ def low_trust_to_sensitive_resource(
     for row in rows:
         src = row["source"]
         res = row["resource"]
-        agent = row["agent"]
-        tool = row["tool"]
         cap = row["capability"]
         key = (src["id"], res["id"])
         if key in seen:
             continue
         seen.add(key)
+        full_path = _path_node_ids(row["path"])
+        agent_id = full_path[1] if len(full_path) > 1 else src["id"]
         findings.append(Finding(
             rule_id="R002",
             title="Low-trust context reaches sensitive resource",
@@ -91,10 +91,10 @@ def low_trust_to_sensitive_resource(
                 f"via capability '{cap['id']}'"
             ),
             severity=FindingSeverity.CRITICAL if res["sensitivity"] >= 4 else FindingSeverity.HIGH,
-            path=[src["id"], agent["id"], tool["id"], cap["id"], res["id"]],
+            path=full_path,
             entities={
                 "context_source": src["id"],
-                "agent": agent["id"],
+                "agent": agent_id,
                 "capability": cap["id"],
                 "resource": res["id"],
             },
@@ -156,8 +156,10 @@ def overprivileged_mcp_exposure(
     client: Neo4jClient, config: AnalysisConfig
 ) -> list[Finding]:
     threshold = config.overexposure_agent_threshold
+    depth = config.max_tool_invocation_depth
     cypher = (
-        "MATCH (agent:Agent)-[:CAN_INVOKE]->(tool:Tool)-[:USES_SERVER]->(server:MCPServer), "
+        "MATCH (agent:Agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
+        "(tool:Tool)-[:USES_SERVER]->(server:MCPServer), "
         "(tool)-[:EXPOSES_CAPABILITY]->(cap:Capability) "
         "WHERE cap.severity >= 3 "
         "WITH server, collect(DISTINCT agent.id) AS agents "
@@ -200,7 +202,7 @@ def trust_boundary_crossing(
         "WHERE agent.trust_level >= 2 "
         "AND source.trust_level <= 1 "
         "AND capability.severity >= 3 "
-        "RETURN source, agent, tool, capability"
+        "RETURN source, agent, capability, path"
     )
     rows = client.run_query(cypher)
     findings: list[Finding] = []
@@ -208,12 +210,12 @@ def trust_boundary_crossing(
     for row in rows:
         src = row["source"]
         agent = row["agent"]
-        tool = row["tool"]
         cap = row["capability"]
         key = (src["id"], agent["id"], cap["id"])
         if key in seen:
             continue
         seen.add(key)
+        full_path = _path_node_ids(row["path"])
         findings.append(Finding(
             rule_id="R005",
             title="Trust boundary crossing",
@@ -224,7 +226,7 @@ def trust_boundary_crossing(
                 f"with critical downstream capability '{cap['id']}'"
             ),
             severity=FindingSeverity.CRITICAL,
-            path=[src["id"], agent["id"], tool["id"], cap["id"]],
+            path=full_path,
             entities={
                 "context_source": src["id"],
                 "agent": agent["id"],

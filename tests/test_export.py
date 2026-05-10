@@ -1,7 +1,26 @@
 import json
 
-from cognigraph.export import to_dot, to_json
+from cognigraph.export import _dot_escape, _dot_id, to_dot, to_json
 from cognigraph.graph.builder import CogniGraph
+from cognigraph.schemas.enums import NodeType
+
+
+class TestDotEscaping:
+    def test_escapes_quotes(self):
+        assert _dot_escape('a"b') == 'a\\"b'
+
+    def test_escapes_backslash(self):
+        assert _dot_escape("a\\b") == "a\\\\b"
+
+    def test_unique_ids_for_similar_names(self):
+        id1 = _dot_id("a-b", NodeType.TOOL)
+        id2 = _dot_id("a_b", NodeType.TOOL)
+        assert id1 != id2
+
+    def test_unique_ids_across_types(self):
+        id1 = _dot_id("shared", NodeType.AGENT)
+        id2 = _dot_id("shared", NodeType.TOOL)
+        assert id1 != id2
 
 
 class TestToDot:

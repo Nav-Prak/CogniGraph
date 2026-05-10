@@ -251,3 +251,20 @@ class TestValidateReferences:
         )
         with pytest.raises(FixtureValidationError, match="2 error"):
             validate_references(config)
+
+    def test_duplicate_id_across_types(self):
+        config = FixtureConfig(
+            agents=[AgentConfig(id="shared_id", trust_level=1)],
+            tools=[ToolConfig(id="shared_id")],
+        )
+        with pytest.raises(FixtureValidationError, match="Duplicate ID"):
+            validate_references(config)
+
+    def test_duplicate_id_three_types(self):
+        config = FixtureConfig(
+            context_sources=[ContextSourceConfig(id="x", source_type=SourceType.WEBPAGE, trust_level=0)],
+            agents=[AgentConfig(id="x", trust_level=1)],
+            capabilities=[CapabilityConfig(id="x", severity=3)],
+        )
+        with pytest.raises(FixtureValidationError, match="Duplicate ID"):
+            validate_references(config)
