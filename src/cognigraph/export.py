@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 from cognigraph.graph.builder import CogniGraph
-from cognigraph.schemas.enums import EdgeType, NodeType
+from cognigraph.schemas.enums import EdgeType, NodeType, RuntimeEdgeType
 
 _NODE_SHAPES: dict[NodeType, str] = {
     NodeType.CONTEXT_SOURCE: "parallelogram",
@@ -34,6 +33,32 @@ def _dot_escape(s: str) -> str:
 
 def _dot_id(node_id: str, node_type: NodeType) -> str:
     return f'"{_dot_escape(node_type.value)}:{_dot_escape(node_id)}"'
+
+
+def _edge_label(data: dict) -> str:
+    edge_type = data.get("edge_type", "")
+    if isinstance(edge_type, (EdgeType, RuntimeEdgeType)):
+        return edge_type.value
+    return str(edge_type)
+
+
+def _edge_style(src: str, tgt: str, data: dict, highlight_edges: set[tuple[str, str]]) -> str:
+    is_runtime = data.get("runtime", False)
+    is_observed = data.get("observed", False)
+    is_highlight = (src, tgt) in highlight_edges
+
+    parts: list[str] = []
+    if is_runtime:
+        parts.append('style="dashed"')
+        parts.append('color="#e63946"')
+    elif is_observed:
+        parts.append('color="#2a9d8f"')
+        parts.append("penwidth=2.5")
+    elif is_highlight:
+        parts.append('color="red"')
+        parts.append("penwidth=2.0")
+
+    return ", " + ", ".join(parts) if parts else ""
 
 
 def to_dot(graph: CogniGraph, highlight_paths: list[list[str]] | None = None) -> str:
@@ -72,17 +97,12 @@ def to_dot(graph: CogniGraph, highlight_paths: list[list[str]] | None = None) ->
     lines.append("")
 
     for src, tgt, data in graph._graph.edges(data=True):
-        edge_type = data.get("edge_type", "")
-        label = _dot_escape(
-            edge_type.value if isinstance(edge_type, EdgeType) else str(edge_type)
-        )
+        label = _dot_escape(_edge_label(data))
         src_type = graph._graph.nodes[src].get("node_type", NodeType.TOOL)
         tgt_type = graph._graph.nodes[tgt].get("node_type", NodeType.TOOL)
         src_did = _dot_id(src, src_type)
         tgt_did = _dot_id(tgt, tgt_type)
-        style = ""
-        if (src, tgt) in highlight_edges:
-            style = ', color="red", penwidth=2.0'
+        style = _edge_style(src, tgt, data, highlight_edges)
         lines.append(f'  {src_did} -> {tgt_did} [label="{label}"{style}];')
 
     lines.append("}")
@@ -94,9 +114,7 @@ def to_json(graph: CogniGraph) -> dict:
     for node_id, data in graph._graph.nodes(data=True):
         node = {"id": node_id}
         for k, v in data.items():
-            if isinstance(v, NodeType):
-                node[k] = v.value
-            elif isinstance(v, EdgeType):
+            if isinstance(v, (NodeType, EdgeType, RuntimeEdgeType)):
                 node[k] = v.value
             else:
                 node[k] = v
@@ -106,7 +124,7 @@ def to_json(graph: CogniGraph) -> dict:
     for src, tgt, data in graph._graph.edges(data=True):
         edge = {"source": src, "target": tgt}
         for k, v in data.items():
-            if isinstance(v, EdgeType):
+            if isinstance(v, (EdgeType, RuntimeEdgeType)):
                 edge[k] = v.value
             else:
                 edge[k] = v

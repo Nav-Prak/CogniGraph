@@ -36,6 +36,15 @@ class EdgeType(str, Enum):
     USES_SERVER = "USES_SERVER"
 
 
+class RuntimeEdgeType(str, Enum):
+    INVOKED = "INVOKED"
+    READ_FROM = "READ_FROM"
+    WROTE_TO = "WROTE_TO"
+    PASSED_TO = "PASSED_TO"
+    RETRIEVED_FROM = "RETRIEVED_FROM"
+    EXECUTED_IN = "EXECUTED_IN"
+
+
 class NodeType(str, Enum):
     AGENT = "Agent"
     TOOL = "Tool"
