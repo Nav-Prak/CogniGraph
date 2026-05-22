@@ -1,6 +1,12 @@
 import json
 
-from cognigraph.report import findings_to_json, format_finding, format_report
+from cognigraph.report import (
+    findings_to_json,
+    format_finding,
+    format_html_report,
+    format_report,
+)
+from cognigraph.rules.engine import run_all_rules
 from cognigraph.schemas.findings import Finding, FindingSeverity
 
 
@@ -86,3 +92,32 @@ class TestFindingsToJson:
         assert entry["rule_id"] == "R001"
         assert entry["title"] == "Test finding"
         assert entry["path"] == ["a", "b", "c"]
+
+
+class TestFormatHtmlReport:
+    def test_contains_phase3_sections(self, sample_graph, sample_config):
+        findings = run_all_rules(sample_graph, sample_config.analysis)
+        html = format_html_report(sample_graph, findings)
+        assert "Path Viewer" in html
+        assert "Node Metadata Inspector" in html
+        assert "Graph Export Preview" in html
+        assert "Finding 1" in html
+
+    def test_contains_path_and_node_metadata(self, sample_graph, sample_config):
+        findings = run_all_rules(sample_graph, sample_config.analysis)
+        html = format_html_report(sample_graph, findings)
+        assert "external_webpage" in html
+        assert "planner_agent" in html
+        assert "filesystem_tool" in html
+        assert "SecretRead" in html
+        assert "trust_level=2" in html
+
+    def test_escapes_finding_content(self, sample_graph):
+        finding = _make_finding(
+            title="<script>",
+            description='bad "thing"',
+            path=["external_webpage", "planner_agent"],
+        )
+        html = format_html_report(sample_graph, [finding])
+        assert "&lt;script&gt;" in html
+        assert 'bad &quot;thing&quot;' in html

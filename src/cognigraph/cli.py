@@ -5,7 +5,7 @@ from pathlib import Path
 from cognigraph.export import export_dot, export_json
 from cognigraph.fixture.loader import FixtureValidationError, load_fixture
 from cognigraph.graph.builder import build_from_fixture
-from cognigraph.report import findings_to_json, format_report
+from cognigraph.report import export_html_report, findings_to_json, format_report
 from cognigraph.rules.engine import run_all_rules
 from cognigraph.trace.loader import load_trace
 from cognigraph.trace.overlay import (
@@ -43,6 +43,12 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         metavar="PATH",
         help="Write findings as JSON to file",
+    )
+    parser.add_argument(
+        "--html-report",
+        type=Path,
+        metavar="PATH",
+        help="Write a static HTML report with findings, paths, and node metadata",
     )
     parser.add_argument(
         "--trace",
@@ -109,6 +115,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.findings_json:
         args.findings_json.write_text(findings_to_json(findings))
         print(f"Findings exported to {args.findings_json}", file=sys.stderr)
+
+    if args.html_report:
+        export_html_report(
+            graph,
+            findings,
+            args.html_report,
+            overlay_result=overlay_result,
+        )
+        print(f"HTML report exported to {args.html_report}", file=sys.stderr)
 
     return 0 if not findings else 2
 

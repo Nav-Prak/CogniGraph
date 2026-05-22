@@ -44,6 +44,15 @@ class TestCLI:
         findings = json.loads(json_path.read_text())
         assert len(findings) == 11
 
+    def test_html_report(self, tmp_path):
+        html_path = tmp_path / "report.html"
+        main([SAMPLE, "--quiet", "--html-report", str(html_path)])
+        content = html_path.read_text()
+        assert "CogniGraph Static Report" in content
+        assert "Path Viewer" in content
+        assert "Node Metadata Inspector" in content
+        assert "external_webpage" in content
+
     def test_bad_fixture_returns_1(self, tmp_path):
         bad = tmp_path / "bad.yaml"
         bad.write_text("agents:\n  - id: a\n    trust_level: 99\n")

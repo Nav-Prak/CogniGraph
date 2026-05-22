@@ -253,6 +253,16 @@ class TestCLIWithTrace:
         assert "digraph CogniGraph" in content
         assert "dashed" in content or "runtime" in content.lower() or "observed" in content.lower()
 
+    def test_trace_flag_with_html_report(self, tmp_path):
+        from cognigraph.cli import main
+
+        html_path = tmp_path / "report.html"
+        main([self.SAMPLE, "--trace", self.TRACE, "--quiet", "--html-report", str(html_path)])
+        content = html_path.read_text()
+        assert "Runtime Overlay" in content
+        assert "runtime-only edges" in content
+        assert "Static edge coverage" in content
+
     def test_bad_trace_returns_1(self, tmp_path, capsys):
         from cognigraph.cli import main
 

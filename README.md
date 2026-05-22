@@ -57,6 +57,9 @@ uv run cognigraph fixtures/sample_fixture.yaml --export-json graph.json
 # Export findings as structured JSON
 uv run cognigraph fixtures/sample_fixture.yaml --findings-json findings.json
 
+# Export a static HTML report with finding paths and node metadata
+uv run cognigraph fixtures/sample_fixture.yaml --html-report report.html
+
 # Suppress stdout report (useful when only exporting)
 uv run cognigraph fixtures/sample_fixture.yaml --quiet --export-dot graph.dot
 
