@@ -1,0 +1,10 @@
+tool_capability_annotations:
+  filesystem_tool:
+    capabilities:
+      - SecretRead
+      - FilesystemRead
+
+  github_tool:
+    capabilities:
+      - GitHubPush
+      - ExternalNetworkSend

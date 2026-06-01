@@ -1,7 +1,13 @@
 import pytest
 from pydantic import ValidationError
 
-from cognigraph.fixture.loader import FixtureValidationError, load_fixture, validate_references
+from cognigraph.fixture.loader import (
+    FixtureValidationError,
+    apply_tool_annotations,
+    load_fixture,
+    load_tool_annotations,
+    validate_references,
+)
 from cognigraph.fixture.models import (
     AgentConfig,
     AnalysisConfig,
@@ -11,6 +17,8 @@ from cognigraph.fixture.models import (
     FixtureConfig,
     MCPServerConfig,
     ResourceConfig,
+    ToolAnnotationsConfig,
+    ToolCapabilityAnnotation,
     ToolConfig,
 )
 from cognigraph.schemas.enums import ResourceType, SourceType
@@ -189,6 +197,85 @@ class TestLoadFixture:
         assert len(config.resources) == 2
         assert len(config.capability_bindings) == 2
         assert config.analysis.max_tool_invocation_depth == 5
+
+    def test_load_with_annotations(self, tmp_path):
+        fixture = tmp_path / "fixture.yaml"
+        fixture.write_text(
+            """
+tools:
+  - id: fs_tool
+
+capabilities:
+  - id: SecretRead
+    severity: 4
+""",
+            encoding="utf-8",
+        )
+        annotations = tmp_path / "annotations.yaml"
+        annotations.write_text(
+            """
+tool_capability_annotations:
+  fs_tool:
+    capabilities:
+      - SecretRead
+""",
+            encoding="utf-8",
+        )
+
+        config = load_fixture(fixture, annotations_path=annotations)
+        assert config.tools[0].capabilities == ["SecretRead"]
+
+    def test_load_annotations_bad_yaml_shape(self, tmp_path):
+        annotations = tmp_path / "annotations.yaml"
+        annotations.write_text("- not-a-mapping\n", encoding="utf-8")
+        with pytest.raises(FixtureValidationError, match="Expected YAML mapping"):
+            load_tool_annotations(annotations)
+
+
+class TestToolAnnotations:
+    def test_apply_tool_annotations_merges_and_dedupes(self):
+        config = FixtureConfig(
+            tools=[
+                ToolConfig(
+                    id="fs_tool",
+                    capabilities=["FilesystemRead"],
+                )
+            ],
+            capabilities=[
+                CapabilityConfig(id="FilesystemRead", severity=3),
+                CapabilityConfig(id="SecretRead", severity=4),
+            ],
+        )
+        annotations = ToolAnnotationsConfig(
+            tool_capability_annotations={
+                "fs_tool": ToolCapabilityAnnotation(
+                    capabilities=["FilesystemRead", "SecretRead"]
+                )
+            }
+        )
+
+        updated = apply_tool_annotations(config, annotations)
+        assert updated.tools[0].capabilities == ["FilesystemRead", "SecretRead"]
+
+    def test_apply_tool_annotations_rejects_unknown_tool(self):
+        config = FixtureConfig(tools=[ToolConfig(id="fs_tool")])
+        annotations = ToolAnnotationsConfig(
+            tool_capability_annotations={
+                "ghost_tool": ToolCapabilityAnnotation(capabilities=["SecretRead"])
+            }
+        )
+        with pytest.raises(FixtureValidationError, match="unknown tool"):
+            apply_tool_annotations(config, annotations)
+
+    def test_apply_tool_annotations_rejects_unknown_capability(self):
+        config = FixtureConfig(tools=[ToolConfig(id="fs_tool")])
+        annotations = ToolAnnotationsConfig(
+            tool_capability_annotations={
+                "fs_tool": ToolCapabilityAnnotation(capabilities=["SecretRead"])
+            }
+        )
+        with pytest.raises(FixtureValidationError, match="unknown capability"):
+            apply_tool_annotations(config, annotations)
 
 
 class TestValidateReferences:

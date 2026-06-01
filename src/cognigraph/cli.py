@@ -57,6 +57,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to JSON runtime trace file to overlay on the graph",
     )
     parser.add_argument(
+        "--annotations",
+        type=Path,
+        metavar="PATH",
+        help="Path to YAML tool capability annotations to apply to the fixture",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress the text report on stdout",
@@ -64,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        config = load_fixture(args.fixture)
+        config = load_fixture(args.fixture, annotations_path=args.annotations)
     except FixtureValidationError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

@@ -1,0 +1,64 @@
+analysis:
+  max_tool_invocation_depth: 5
+  max_path_length: 8
+  overexposure_agent_threshold: 3
+
+context_sources:
+  - id: external_webpage
+    source_type: webpage
+    trust_level: 0
+
+agents:
+  - id: research_planner
+    trust_level: 2
+    consumes:
+      - external_webpage
+    can_invoke:
+      - filesystem_tool
+      - github_tool
+
+tools:
+  - id: filesystem_tool
+    mcp_server: filesystem_mcp
+    can_invoke: []
+
+  - id: github_tool
+    mcp_server: github_mcp
+    can_invoke: []
+
+mcp_servers:
+  - id: filesystem_mcp
+  - id: github_mcp
+
+capabilities:
+  - id: SecretRead
+    severity: 4
+    resource_binding_required: true
+
+  - id: FilesystemRead
+    severity: 3
+    resource_binding_required: false
+
+  - id: GitHubPush
+    severity: 4
+    resource_binding_required: true
+
+  - id: ExternalNetworkSend
+    severity: 3
+    resource_binding_required: false
+
+resources:
+  - id: ssh_private_key
+    type: secret
+    sensitivity: 4
+
+  - id: github_repository
+    type: repository
+    sensitivity: 3
+
+capability_bindings:
+  - capability: SecretRead
+    resource: ssh_private_key
+
+  - capability: GitHubPush
+    resource: github_repository

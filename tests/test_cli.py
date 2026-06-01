@@ -4,6 +4,7 @@ from pathlib import Path
 from cognigraph.cli import main
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 SAMPLE = str(FIXTURES_DIR / "sample_fixture.yaml")
 
 
@@ -52,6 +53,12 @@ class TestCLI:
         assert "Path Viewer" in content
         assert "Node Metadata Inspector" in content
         assert "external_webpage" in content
+
+    def test_annotations_flag(self):
+        fixture = str(EXAMPLES_DIR / "rag_mcp_unannotated.yaml")
+        annotations = str(EXAMPLES_DIR / "manual_tool_annotations.yaml")
+        rc = main([fixture, "--annotations", annotations, "--quiet"])
+        assert rc == 2
 
     def test_bad_fixture_returns_1(self, tmp_path):
         bad = tmp_path / "bad.yaml"

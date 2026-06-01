@@ -8,8 +8,9 @@ from cognigraph.rules.engine import run_all_rules
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 
 
-def _run_example(name: str):
-    config = load_fixture(EXAMPLES_DIR / name)
+def _run_example(name: str, annotations: str | None = None):
+    annotations_path = EXAMPLES_DIR / annotations if annotations else None
+    config = load_fixture(EXAMPLES_DIR / name, annotations_path=annotations_path)
     graph = build_from_fixture(config)
     findings = run_all_rules(graph, config.analysis)
     return config, graph, findings
@@ -41,6 +42,16 @@ class TestMVPExamples:
             "ExternalNetworkSend",
         }
         assert all(f.recommended_control for f in findings)
+
+    def test_manual_annotations_produce_same_vulnerable_findings(self):
+        _, _, inline_findings = _run_example("rag_mcp_vulnerable.yaml")
+        _, _, annotated_findings = _run_example(
+            "rag_mcp_unannotated.yaml",
+            annotations="manual_tool_annotations.yaml",
+        )
+        assert [f.model_dump() for f in annotated_findings] == [
+            f.model_dump() for f in inline_findings
+        ]
 
     def test_safe_fixture_produces_no_findings(self):
         _, _, findings = _run_example("least_privilege_safe.yaml")

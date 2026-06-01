@@ -52,6 +52,7 @@ The `examples/` directory contains the core demo fixtures:
 | Fixture | Purpose | Expected result |
 |---------|---------|-----------------|
 | `examples/rag_mcp_vulnerable.yaml` | Low-trust web/RAG context reaches secret, repository, and network capabilities | R001, R002, R003, and R005 findings |
+| `examples/rag_mcp_unannotated.yaml` + `examples/manual_tool_annotations.yaml` | Same topology as the vulnerable demo, with tool capabilities supplied through a separate annotation file | Same findings as the inline vulnerable fixture |
 | `examples/least_privilege_safe.yaml` | Low-trust input can only reach low-severity documentation search over low-sensitivity public docs | No findings |
 | `examples/overexposed_mcp.yaml` | Three agents can invoke one MCP-backed critical capability with threshold set to `3` | R004 finding |
 
@@ -71,6 +72,9 @@ uv run cognigraph examples/rag_mcp_vulnerable.yaml --export-json graph.json
 
 # Export findings as structured JSON
 uv run cognigraph examples/rag_mcp_vulnerable.yaml --findings-json findings.json
+
+# Apply manual tool capability annotations to a fixture
+uv run cognigraph examples/rag_mcp_unannotated.yaml --annotations examples/manual_tool_annotations.yaml
 
 # Export a static HTML report with finding paths and node metadata
 uv run cognigraph examples/rag_mcp_vulnerable.yaml --html-report report.html
@@ -158,6 +162,31 @@ capabilities:
 ```
 
 See `fixtures/sample_fixture.yaml` for a full example with MCP servers, resources, and capability bindings.
+
+### Manual Tool Annotations
+
+Tool capabilities can be declared inline in the fixture or supplied through a separate annotation file. The annotation workflow is useful when the base fixture comes from a tool or MCP inventory and security capability mapping should remain human-reviewed.
+
+```yaml
+tool_capability_annotations:
+  filesystem_tool:
+    capabilities:
+      - SecretRead
+      - FilesystemRead
+
+  github_tool:
+    capabilities:
+      - GitHubPush
+      - ExternalNetworkSend
+```
+
+Run it with:
+
+```bash
+uv run cognigraph examples/rag_mcp_unannotated.yaml --annotations examples/manual_tool_annotations.yaml
+```
+
+Annotations are deterministic overlays. Unknown tools, unknown capabilities, and missing required resource bindings are rejected during fixture validation.
 
 ### Node Types
 

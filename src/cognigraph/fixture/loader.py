@@ -2,21 +2,72 @@ from pathlib import Path
 
 import yaml
 
-from cognigraph.fixture.models import FixtureConfig
+from cognigraph.fixture.models import FixtureConfig, ToolAnnotationsConfig
 
 
 class FixtureValidationError(Exception):
     pass
 
 
-def load_fixture(path: Path) -> FixtureConfig:
-    with open(path) as f:
+def _load_yaml(path: Path) -> dict:
+    with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     if raw is None:
-        raw = {}
+        return {}
+    if not isinstance(raw, dict):
+        raise FixtureValidationError(f"Expected YAML mapping in '{path}'")
+    return raw
+
+
+def load_tool_annotations(path: Path) -> ToolAnnotationsConfig:
+    return ToolAnnotationsConfig(**_load_yaml(path))
+
+
+def load_fixture(path: Path, annotations_path: Path | None = None) -> FixtureConfig:
+    raw = _load_yaml(path)
     config = FixtureConfig(**raw)
     validate_references(config)
+    if annotations_path is not None:
+        annotations = load_tool_annotations(annotations_path)
+        config = apply_tool_annotations(config, annotations)
     return config
+
+
+def apply_tool_annotations(
+    config: FixtureConfig,
+    annotations: ToolAnnotationsConfig,
+) -> FixtureConfig:
+    if not annotations.tool_capability_annotations:
+        return config
+
+    tool_ids = {tool.id for tool in config.tools}
+    unknown_tools = sorted(
+        tool_id
+        for tool_id in annotations.tool_capability_annotations
+        if tool_id not in tool_ids
+    )
+    if unknown_tools:
+        raise FixtureValidationError(
+            "Tool capability annotations reference unknown tool(s): "
+            + ", ".join(unknown_tools)
+        )
+
+    updated_tools = []
+    for tool in config.tools:
+        annotation = annotations.tool_capability_annotations.get(tool.id)
+        if annotation is None:
+            updated_tools.append(tool)
+            continue
+        merged_capabilities = list(
+            dict.fromkeys([*tool.capabilities, *annotation.capabilities])
+        )
+        updated_tools.append(
+            tool.model_copy(update={"capabilities": merged_capabilities})
+        )
+
+    updated_config = config.model_copy(update={"tools": updated_tools})
+    validate_references(updated_config)
+    return updated_config
 
 
 def _collect_ids(config: FixtureConfig) -> dict[str, list[str]]:

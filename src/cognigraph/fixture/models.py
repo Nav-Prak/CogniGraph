@@ -29,6 +29,16 @@ class ToolConfig(BaseModel, frozen=True):
     capabilities: list[str] = Field(default_factory=list)
 
 
+class ToolCapabilityAnnotation(BaseModel, frozen=True):
+    capabilities: list[str] = Field(default_factory=list)
+
+
+class ToolAnnotationsConfig(BaseModel, frozen=True):
+    tool_capability_annotations: dict[str, ToolCapabilityAnnotation] = Field(
+        default_factory=dict
+    )
+
+
 class MCPServerConfig(BaseModel, frozen=True):
     id: str
 
