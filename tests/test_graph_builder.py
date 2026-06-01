@@ -55,6 +55,26 @@ class TestEdgeValidation:
         with pytest.raises(InvalidEdgeError, match="Invalid edge"):
             graph.add_edge("cs", "cap", EdgeType.CONSUMED_BY)
 
+    @pytest.mark.parametrize(
+        "source_type,edge_type,target_type",
+        [
+            (NodeType.CONTEXT_SOURCE, EdgeType.CONSUMED_BY, NodeType.CAPABILITY),
+            (NodeType.CONTEXT_SOURCE, EdgeType.CONSUMED_BY, NodeType.RESOURCE),
+            (NodeType.AGENT, EdgeType.CAN_INVOKE, NodeType.RESOURCE),
+            (NodeType.AGENT, EdgeType.EXPOSES_CAPABILITY, NodeType.CAPABILITY),
+            (NodeType.MCP_SERVER, EdgeType.EXPOSES_CAPABILITY, NodeType.CAPABILITY),
+            (NodeType.RESOURCE, EdgeType.CAN_INVOKE, NodeType.TOOL),
+            (NodeType.CAPABILITY, EdgeType.CAN_ACCESS_RESOURCE, NodeType.AGENT),
+            (NodeType.RESOURCE, EdgeType.CONSUMED_BY, NodeType.CONTEXT_SOURCE),
+        ],
+    )
+    def test_rejects_invalid_relationship_matrix_edges(self, source_type, edge_type, target_type):
+        graph = CogniGraph()
+        graph.add_node("src", source_type)
+        graph.add_node("tgt", target_type)
+        with pytest.raises(InvalidEdgeError, match="Invalid edge"):
+            graph.add_edge("src", "tgt", edge_type)
+
     def test_rejects_missing_source(self):
         graph = CogniGraph()
         graph.add_node("tgt", NodeType.TOOL)
