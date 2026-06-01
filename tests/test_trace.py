@@ -346,6 +346,8 @@ class TestCLIWithTrace:
         assert "runtime-only edges" in content
         assert "projected paths" in content
         assert "Static edge coverage" in content
+        assert "Graph Visualizer" in content
+        assert "observed-edge" in content
 
     def test_bad_trace_returns_1(self, tmp_path, capsys):
         from cognigraph.cli import main

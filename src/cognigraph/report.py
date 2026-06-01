@@ -18,6 +18,26 @@ _SEVERITY_LABELS: dict[FindingSeverity, str] = {
     FindingSeverity.CRITICAL: "CRITICAL",
 }
 
+_GRAPH_NODE_TYPE_ORDER: tuple[NodeType, ...] = (
+    NodeType.CONTEXT_SOURCE,
+    NodeType.AGENT,
+    NodeType.TOOL,
+    NodeType.CAPABILITY,
+    NodeType.RESOURCE,
+    NodeType.MCP_SERVER,
+    NodeType.EXECUTION_ENVIRONMENT,
+)
+
+_GRAPH_NODE_COLORS: dict[NodeType, str] = {
+    NodeType.CONTEXT_SOURCE: "#b85c38",
+    NodeType.AGENT: "#1d7f73",
+    NodeType.TOOL: "#365f91",
+    NodeType.CAPABILITY: "#b42318",
+    NodeType.RESOURCE: "#7a5c00",
+    NodeType.MCP_SERVER: "#6f3fa0",
+    NodeType.EXECUTION_ENVIRONMENT: "#3f6b57",
+}
+
 
 def format_finding(finding: Finding, index: int) -> str:
     severity = _SEVERITY_LABELS.get(finding.severity, "UNKNOWN")
@@ -109,6 +129,13 @@ def _edge_type_label(value: object) -> str:
     return str(_enum_value(value))
 
 
+def _truncate(value: object, limit: int = 24) -> str:
+    text = str(value)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "..."
+
+
 def _severity_counts(findings: list[Finding]) -> dict[FindingSeverity, int]:
     counts: dict[FindingSeverity, int] = {}
     for finding in findings:
@@ -152,6 +179,196 @@ def _path_view(graph: CogniGraph, path: list[str]) -> str:
             parts.append('<span class="path-arrow">-&gt;</span>')
         parts.append(_node_chip(graph, node_id))
     return '<div class="path-view">' + "".join(parts) + "</div>"
+
+
+def _finding_edges(findings: list[Finding]) -> set[tuple[str, str]]:
+    edges: set[tuple[str, str]] = set()
+    for finding in findings:
+        for index in range(len(finding.path) - 1):
+            edges.add((finding.path[index], finding.path[index + 1]))
+    return edges
+
+
+def _finding_nodes(findings: list[Finding]) -> set[str]:
+    nodes: set[str] = set()
+    for finding in findings:
+        nodes.update(finding.path)
+    return nodes
+
+
+def _node_visual_meta(data: dict[str, Any]) -> str:
+    parts = []
+    if "trust_level" in data:
+        parts.append(f"trust {data['trust_level']}")
+    if "severity" in data:
+        parts.append(f"sev {data['severity']}")
+    if "sensitivity" in data:
+        parts.append(f"sens {data['sensitivity']}")
+    return " | ".join(parts)
+
+
+def _graph_visualizer_html(graph: CogniGraph, findings: list[Finding]) -> str:
+    if graph.node_count == 0:
+        return """
+        <section class="panel" id="graph-visualizer">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Graph Visualizer</p>
+              <h2>Capability Map</h2>
+            </div>
+          </div>
+          <p class="empty-state">No graph nodes available.</p>
+        </section>
+        """
+
+    columns: list[tuple[NodeType | str, list[str]]] = []
+    known_nodes: set[str] = set()
+    for node_type in _GRAPH_NODE_TYPE_ORDER:
+        node_ids = sorted(
+            node_id
+            for node_id, data in graph._graph.nodes(data=True)
+            if data.get("node_type") == node_type
+        )
+        if node_ids:
+            columns.append((node_type, node_ids))
+            known_nodes.update(node_ids)
+
+    unknown_nodes = sorted(
+        node_id
+        for node_id in graph._graph.nodes
+        if node_id not in known_nodes
+    )
+    if unknown_nodes:
+        columns.append(("Unknown", unknown_nodes))
+
+    node_width = 172
+    node_height = 60
+    x_gap = 230
+    y_gap = 92
+    margin = 42
+    max_rows = max(len(node_ids) for _, node_ids in columns)
+    width = margin * 2 + node_width + max(0, len(columns) - 1) * x_gap
+    height = max(260, int(margin * 2 + node_height + max(0, max_rows - 1) * y_gap))
+    positions: dict[str, tuple[float, float]] = {}
+
+    for column_index, (_, node_ids) in enumerate(columns):
+        x = margin + column_index * x_gap
+        offset = (max_rows - len(node_ids)) * y_gap / 2
+        for row_index, node_id in enumerate(node_ids):
+            y = margin + offset + row_index * y_gap
+            positions[node_id] = (x, y)
+
+    finding_edges = _finding_edges(findings)
+    finding_nodes = _finding_nodes(findings)
+    edge_items = []
+    label_items = []
+    for src, tgt, data in sorted(graph._graph.edges(data=True), key=lambda item: (item[0], item[1])):
+        if src not in positions or tgt not in positions:
+            continue
+        src_x, src_y = positions[src]
+        tgt_x, tgt_y = positions[tgt]
+        start_x = src_x + node_width
+        start_y = src_y + node_height / 2
+        end_x = tgt_x
+        end_y = tgt_y + node_height / 2
+        mid_x = (start_x + end_x) / 2
+        control_gap = max(72, abs(end_x - start_x) / 2)
+        path = (
+            f"M {start_x:.1f} {start_y:.1f} "
+            f"C {start_x + control_gap:.1f} {start_y:.1f}, "
+            f"{end_x - control_gap:.1f} {end_y:.1f}, "
+            f"{end_x:.1f} {end_y:.1f}"
+        )
+        classes = ["graph-edge"]
+        if data.get("runtime"):
+            classes.append("runtime-edge")
+        if data.get("observed"):
+            classes.append("observed-edge")
+        if (src, tgt) in finding_edges:
+            classes.append("finding-edge")
+        edge_label = _edge_type_label(data.get("runtime_edge_type", data.get("edge_type", "")))
+        edge_items.append(
+            f'<path class="{" ".join(classes)}" d="{_escape(path)}" '
+            f'marker-end="url(#arrowhead)">'
+            f"<title>{_escape(src)} -[{_escape(edge_label)}]-> {_escape(tgt)}</title>"
+            "</path>"
+        )
+        label_y = (start_y + end_y) / 2 - 7
+        label_items.append(
+            f'<text class="graph-edge-label" x="{mid_x:.1f}" y="{label_y:.1f}">'
+            f"{_escape(_truncate(edge_label, 18))}</text>"
+        )
+
+    node_items = []
+    for node_id, (x, y) in sorted(positions.items(), key=lambda item: (item[1][0], item[1][1], item[0])):
+        data = graph.get_node(node_id)
+        node_type = data.get("node_type", "Unknown")
+        color = _GRAPH_NODE_COLORS.get(node_type, "#697586")
+        node_type_label = str(_enum_value(node_type))
+        meta = _node_visual_meta(data)
+        classes = ["graph-node"]
+        if node_id in finding_nodes:
+            classes.append("finding-node")
+        meta_line = (
+            f'<text class="graph-node-meta" x="{x + 14:.1f}" y="{y + 48:.1f}">'
+            f"{_escape(_truncate(meta, 24))}</text>"
+            if meta
+            else ""
+        )
+        node_items.append(
+            f'<a href="#{_anchor("node", node_id)}" class="{" ".join(classes)}" '
+            f'data-node-id="{_escape(node_id)}">'
+            f"<title>{_escape(node_id)} ({_escape(node_type_label)})</title>"
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{node_width}" height="{node_height}" '
+            f'rx="8" fill="{color}"></rect>'
+            f'<text class="graph-node-id" x="{x + 14:.1f}" y="{y + 23:.1f}">'
+            f"{_escape(_truncate(node_id, 23))}</text>"
+            f'<text class="graph-node-type" x="{x + 14:.1f}" y="{y + 38:.1f}">'
+            f"{_escape(_truncate(node_type_label, 22))}</text>"
+            f"{meta_line}"
+            "</a>"
+        )
+
+    legend_items = "\n".join(
+        f'<span><i style="background:{_escape(color)}"></i>{_escape(node_type.value)}</span>'
+        for node_type, color in _GRAPH_NODE_COLORS.items()
+        if any(data.get("node_type") == node_type for _, data in graph._graph.nodes(data=True))
+    )
+
+    return f"""
+    <section class="panel" id="graph-visualizer">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Graph Visualizer</p>
+          <h2>Capability Map</h2>
+        </div>
+      </div>
+      <div class="graph-legend">
+        {legend_items}
+        <span><i class="legend-finding"></i>finding path</span>
+        <span><i class="legend-observed"></i>observed</span>
+        <span><i class="legend-runtime"></i>runtime-only</span>
+      </div>
+      <div class="graph-wrap">
+        <svg class="graph-svg" viewBox="0 0 {width} {height}" role="img" aria-labelledby="graph-title graph-desc">
+          <title id="graph-title">CogniGraph capability map</title>
+          <desc id="graph-desc">Layered graph visualization of nodes, relationships, finding paths, and runtime edge status.</desc>
+          <defs>
+            <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+              <path d="M 0 0 L 10 4 L 0 8 z"></path>
+            </marker>
+          </defs>
+          <g class="graph-edges">
+            {"".join(edge_items)}
+            {"".join(label_items)}
+          </g>
+          <g class="graph-nodes">
+            {"".join(node_items)}
+          </g>
+        </svg>
+      </div>
+    </section>
+    """
 
 
 def _finding_evidence(graph: CogniGraph, finding: Finding) -> str:
@@ -424,6 +641,99 @@ def format_html_report(
       color: var(--accent);
     }}
     .metric-grid small {{ color: var(--muted); }}
+    .graph-wrap {{
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }}
+    .graph-svg {{
+      display: block;
+      width: 100%;
+      min-width: 920px;
+      height: auto;
+    }}
+    .graph-legend {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .graph-legend span {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }}
+    .graph-legend i {{
+      width: 18px;
+      height: 4px;
+      border-radius: 999px;
+      display: inline-block;
+      background: #9aa6b2;
+    }}
+    .graph-legend .legend-finding {{ background: var(--danger); height: 5px; }}
+    .graph-legend .legend-observed {{ background: var(--accent); height: 5px; }}
+    .graph-legend .legend-runtime {{
+      background: repeating-linear-gradient(90deg, var(--danger) 0 6px, transparent 6px 10px);
+      height: 5px;
+    }}
+    .graph-edge {{
+      fill: none;
+      stroke: #98a2b3;
+      stroke-width: 1.5;
+      opacity: 0.88;
+    }}
+    .graph-edge.finding-edge {{
+      stroke: var(--danger);
+      stroke-width: 3.2;
+      opacity: 0.96;
+    }}
+    .graph-edge.observed-edge {{
+      stroke: var(--accent);
+      stroke-width: 2.6;
+    }}
+    .graph-edge.runtime-edge {{
+      stroke: var(--danger);
+      stroke-width: 2.3;
+      stroke-dasharray: 7 5;
+    }}
+    .graph-edge-label {{
+      fill: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      text-anchor: middle;
+      paint-order: stroke;
+      stroke: #fbfcfe;
+      stroke-width: 4px;
+      stroke-linejoin: round;
+    }}
+    #arrowhead path {{ fill: #98a2b3; }}
+    .graph-node rect {{
+      stroke: rgba(23, 32, 42, 0.18);
+      stroke-width: 1.2;
+      filter: drop-shadow(0 1px 1px rgba(16, 24, 40, 0.12));
+    }}
+    .graph-node.finding-node rect {{
+      stroke: var(--danger);
+      stroke-width: 3;
+    }}
+    .graph-node text {{
+      pointer-events: none;
+    }}
+    .graph-node-id {{
+      fill: #ffffff;
+      font-size: 13px;
+      font-weight: 800;
+    }}
+    .graph-node-type, .graph-node-meta {{
+      fill: rgba(255, 255, 255, 0.86);
+      font-size: 10px;
+      font-weight: 700;
+    }}
     .finding-head {{
       display: flex;
       justify-content: space-between;
@@ -545,6 +855,8 @@ def format_html_report(
     </section>
 
     {_overlay_summary_html(graph, overlay_result)}
+
+    {_graph_visualizer_html(graph, findings)}
 
     <section id="findings">
       <div class="section-head">

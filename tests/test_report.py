@@ -106,6 +106,8 @@ class TestFormatHtmlReport:
     def test_contains_phase3_sections(self, sample_graph, sample_config):
         findings = run_all_rules(sample_graph, sample_config.analysis)
         html = format_html_report(sample_graph, findings)
+        assert "Graph Visualizer" in html
+        assert "Capability Map" in html
         assert "Path Viewer" in html
         assert "Node Metadata Inspector" in html
         assert "Graph Export Preview" in html
@@ -121,6 +123,16 @@ class TestFormatHtmlReport:
         assert "trust_level=2" in html
         assert "Recommended Control" in html
         assert "Restrict low-trust context" in html
+
+    def test_contains_inline_graph_visualizer(self, sample_graph, sample_config):
+        findings = run_all_rules(sample_graph, sample_config.analysis)
+        html = format_html_report(sample_graph, findings)
+        assert '<svg class="graph-svg"' in html
+        assert 'data-node-id="external_webpage"' in html
+        assert 'data-node-id="SecretRead"' in html
+        assert "finding-edge" in html
+        assert "CONSUMED_BY" in html
+        assert "CAN_INVOKE" in html
 
     def test_escapes_finding_content(self, sample_graph):
         finding = _make_finding(
