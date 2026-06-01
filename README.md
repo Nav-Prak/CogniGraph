@@ -257,6 +257,8 @@ uv run pytest
 uv run pytest --cov=cognigraph --cov-report=term-missing
 ```
 
+The default coverage gate measures the core in-memory MVP path and omits the optional Neo4j adapter, whose tests require a running Neo4j container.
+
 ## License
 
 Copyright 2026 Naveen Prakaasham Vairaprakasam

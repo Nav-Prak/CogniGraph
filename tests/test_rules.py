@@ -113,3 +113,16 @@ class TestRunAllRules:
         assert findings
         for finding in findings:
             assert finding.recommended_control
+
+    def test_honors_max_path_length(self, sample_graph: CogniGraph):
+        config = AnalysisConfig(
+            max_tool_invocation_depth=5,
+            max_path_length=3,
+        )
+        findings = run_all_rules(sample_graph, config)
+        assert {f.rule_id for f in findings} == {"R003"}
+        assert findings[0].path == [
+            "planner_agent",
+            "SecretRead",
+            "ExternalNetworkSend",
+        ]

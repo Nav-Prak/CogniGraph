@@ -32,3 +32,14 @@ testpaths = ["tests"]
 markers = [
     "neo4j: tests requiring a running Neo4j instance",
 ]
+
+[tool.coverage.run]
+source = ["cognigraph"]
+omit = [
+    "src/cognigraph/neo4j/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 95

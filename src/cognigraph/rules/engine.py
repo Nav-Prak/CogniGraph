@@ -52,6 +52,10 @@ def _reachable_capabilities_with_paths(
     return cap_to_path
 
 
+def _within_path_length(path: list[str], config: AnalysisConfig) -> bool:
+    return len(path) <= config.max_path_length
+
+
 def low_trust_to_critical_capability(
     graph: CogniGraph, config: AnalysisConfig
 ) -> list[Finding]:
@@ -68,6 +72,8 @@ def low_trust_to_critical_capability(
                 cap = graph.get_node(cap_id)
                 if cap["severity"] >= 3:
                     path = [cs_id] + tool_path
+                    if not _within_path_length(path, config):
+                        continue
                     findings.append(Finding(
                         rule_id="R001",
                         title="Low-trust context reaches critical capability",
@@ -105,6 +111,8 @@ def low_trust_to_sensitive_resource(
                     res = graph.get_node(res_id)
                     if res["sensitivity"] >= 3:
                         path = [cs_id] + tool_path + [res_id]
+                        if not _within_path_length(path, config):
+                            continue
                         findings.append(Finding(
                             rule_id="R002",
                             title="Low-trust context reaches sensitive resource",
@@ -138,6 +146,9 @@ def dangerous_capability_composition(
         cap_ids = set(cap_paths.keys())
         for cap_a, cap_b in DANGEROUS_PAIRS:
             if cap_a in cap_ids and cap_b in cap_ids:
+                path = [agent_id, cap_a, cap_b]
+                if not _within_path_length(path, config):
+                    continue
                 findings.append(Finding(
                     rule_id="R003",
                     title="Dangerous capability composition",
@@ -146,7 +157,7 @@ def dangerous_capability_composition(
                         f"'{cap_a}' and '{cap_b}'"
                     ),
                     severity=FindingSeverity.HIGH,
-                    path=[agent_id, cap_a, cap_b],
+                    path=path,
                     entities={
                         "agent": agent_id,
                         "capability_a": cap_a,
@@ -228,6 +239,8 @@ def trust_boundary_crossing(
             if cap["severity"] >= 3:
                 for cs_id in low_trust_sources:
                     path = [cs_id] + tool_path
+                    if not _within_path_length(path, config):
+                        continue
                     findings.append(Finding(
                         rule_id="R005",
                         title="Trust boundary crossing",

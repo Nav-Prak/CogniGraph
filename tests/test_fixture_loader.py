@@ -268,3 +268,34 @@ class TestValidateReferences:
         )
         with pytest.raises(FixtureValidationError, match="Duplicate ID"):
             validate_references(config)
+
+    def test_required_capability_binding_missing(self):
+        config = FixtureConfig(
+            capabilities=[
+                CapabilityConfig(
+                    id="SecretRead",
+                    severity=4,
+                    resource_binding_required=True,
+                )
+            ],
+        )
+        with pytest.raises(FixtureValidationError, match="requires a resource binding"):
+            validate_references(config)
+
+    def test_required_capability_binding_present(self):
+        config = FixtureConfig(
+            capabilities=[
+                CapabilityConfig(
+                    id="SecretRead",
+                    severity=4,
+                    resource_binding_required=True,
+                )
+            ],
+            resources=[
+                ResourceConfig(id="ssh_key", type=ResourceType.SECRET, sensitivity=4)
+            ],
+            capability_bindings=[
+                CapabilityBinding(capability="SecretRead", resource="ssh_key")
+            ],
+        )
+        validate_references(config)

@@ -90,6 +90,17 @@ def validate_references(config: FixtureConfig) -> None:
                 f"Capability binding references unknown resource '{binding.resource}'"
             )
 
+    bound_capability_ids = {
+        binding.capability
+        for binding in config.capability_bindings
+        if binding.capability in capability_ids
+    }
+    for capability in config.capabilities:
+        if capability.resource_binding_required and capability.id not in bound_capability_ids:
+            errors.append(
+                f"Capability '{capability.id}' requires a resource binding"
+            )
+
     if errors:
         raise FixtureValidationError(
             f"Fixture validation failed with {len(errors)} error(s):\n"

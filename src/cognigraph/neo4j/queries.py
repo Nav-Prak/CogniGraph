@@ -10,6 +10,10 @@ def _path_node_ids(path) -> list[str]:
     return [node["id"] for node in path.nodes]
 
 
+def _within_path_length(path: list[str], config: AnalysisConfig) -> bool:
+    return len(path) <= config.max_path_length
+
+
 def low_trust_to_critical_capability(
     client: Neo4jClient, config: AnalysisConfig
 ) -> list[Finding]:
@@ -35,6 +39,8 @@ def low_trust_to_critical_capability(
             continue
         seen.add(key)
         full_path = _path_node_ids(row["path"])
+        if not _within_path_length(full_path, config):
+            continue
         agent_id = full_path[1] if len(full_path) > 1 else src["id"]
         findings.append(Finding(
             rule_id="R001",
@@ -82,6 +88,8 @@ def low_trust_to_sensitive_resource(
             continue
         seen.add(key)
         full_path = _path_node_ids(row["path"])
+        if not _within_path_length(full_path, config):
+            continue
         agent_id = full_path[1] if len(full_path) > 1 else src["id"]
         findings.append(Finding(
             rule_id="R002",
@@ -136,6 +144,9 @@ def dangerous_capability_composition(
         if key in seen:
             continue
         seen.add(key)
+        path = [agent["id"], cap1["id"], cap2["id"]]
+        if not _within_path_length(path, config):
+            continue
         findings.append(Finding(
             rule_id="R003",
             title="Dangerous capability composition",
@@ -144,7 +155,7 @@ def dangerous_capability_composition(
                 f"'{cap1['id']}' and '{cap2['id']}'"
             ),
             severity=FindingSeverity.HIGH,
-            path=[agent["id"], cap1["id"], cap2["id"]],
+            path=path,
             entities={
                 "agent": agent["id"],
                 "capability_a": cap1["id"],
@@ -220,6 +231,8 @@ def trust_boundary_crossing(
             continue
         seen.add(key)
         full_path = _path_node_ids(row["path"])
+        if not _within_path_length(full_path, config):
+            continue
         findings.append(Finding(
             rule_id="R005",
             title="Trust boundary crossing",
