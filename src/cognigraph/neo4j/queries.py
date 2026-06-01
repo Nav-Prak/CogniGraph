@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from cognigraph.fixture.models import AnalysisConfig
 from cognigraph.neo4j.client import Neo4jClient
-from cognigraph.rules.engine import DANGEROUS_PAIRS
+from cognigraph.rules.engine import DANGEROUS_PAIRS, RECOMMENDED_CONTROLS
 from cognigraph.schemas.findings import Finding, FindingSeverity
 
 
@@ -50,6 +50,7 @@ def low_trust_to_critical_capability(
                 "agent": agent_id,
                 "capability": cap["id"],
             },
+            recommended_control=RECOMMENDED_CONTROLS["R001"],
         ))
     return findings
 
@@ -98,6 +99,7 @@ def low_trust_to_sensitive_resource(
                 "capability": cap["id"],
                 "resource": res["id"],
             },
+            recommended_control=RECOMMENDED_CONTROLS["R002"],
         ))
     return findings
 
@@ -148,6 +150,7 @@ def dangerous_capability_composition(
                 "capability_a": cap1["id"],
                 "capability_b": cap2["id"],
             },
+            recommended_control=RECOMMENDED_CONTROLS["R003"],
         ))
     return findings
 
@@ -185,6 +188,7 @@ def overprivileged_mcp_exposure(
                 "mcp_server": server["id"],
                 "agent_count": str(len(agents)),
             },
+            recommended_control=RECOMMENDED_CONTROLS["R004"],
         ))
     return findings
 
@@ -232,6 +236,7 @@ def trust_boundary_crossing(
                 "agent": agent["id"],
                 "capability": cap["id"],
             },
+            recommended_control=RECOMMENDED_CONTROLS["R005"],
         ))
     return findings
 

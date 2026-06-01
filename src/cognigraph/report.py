@@ -26,6 +26,7 @@ def format_finding(finding: Finding, index: int) -> str:
         f"[{finding.rule_id}] [{severity}] {finding.title}",
         f"  {finding.description}",
         f"  Path: {path_str}",
+        f"  Recommended control: {finding.recommended_control}",
     ]
     return "\n".join(lines)
 
@@ -60,9 +61,8 @@ def format_report(findings: list[Finding]) -> str:
 
 def findings_to_json(findings: list[Finding]) -> str:
     return json.dumps(
-        [f.model_dump() for f in findings],
+        [_finding_to_json_dict(f) for f in findings],
         indent=2,
-        default=str,
     )
 
 
@@ -116,9 +116,22 @@ def _severity_counts(findings: list[Finding]) -> dict[FindingSeverity, int]:
     return counts
 
 
+def _finding_to_json_dict(finding: Finding) -> dict[str, Any]:
+    data = finding.model_dump()
+    data["severity"] = _SEVERITY_LABELS.get(finding.severity, "UNKNOWN")
+    return data
+
+
 def _node_type(graph: CogniGraph, node_id: str) -> str:
     data = graph.get_node(node_id)
     return str(_enum_value(data.get("node_type", "Unknown")))
+
+
+def _safe_node(graph: CogniGraph, node_id: str) -> dict[str, Any] | None:
+    try:
+        return graph.get_node(node_id)
+    except KeyError:
+        return None
 
 
 def _node_chip(graph: CogniGraph, node_id: str) -> str:
@@ -139,6 +152,44 @@ def _path_view(graph: CogniGraph, path: list[str]) -> str:
             parts.append('<span class="path-arrow">-&gt;</span>')
         parts.append(_node_chip(graph, node_id))
     return '<div class="path-view">' + "".join(parts) + "</div>"
+
+
+def _finding_evidence(graph: CogniGraph, finding: Finding) -> str:
+    items: list[str] = []
+    for entity_key, label, attr_label, attr_name in [
+        ("context_source", "Context source", "trust level", "trust_level"),
+        ("agent", "Agent", "trust level", "trust_level"),
+        ("capability", "Capability", "severity", "severity"),
+        ("capability_a", "Capability A", "severity", "severity"),
+        ("capability_b", "Capability B", "severity", "severity"),
+        ("resource", "Resource", "sensitivity", "sensitivity"),
+    ]:
+        node_id = finding.entities.get(entity_key)
+        if not node_id:
+            continue
+        data = _safe_node(graph, node_id)
+        if data is None or attr_name not in data:
+            continue
+        items.append(
+            f"<li><strong>{_escape(label)}:</strong> "
+            f"<code>{_escape(node_id)}</code> "
+            f"{_escape(attr_label)} {_escape(data[attr_name])}</li>"
+        )
+
+    if "mcp_server" in finding.entities:
+        server_id = finding.entities["mcp_server"]
+        items.append(
+            f"<li><strong>MCP server:</strong> <code>{_escape(server_id)}</code></li>"
+        )
+    if "agent_count" in finding.entities:
+        items.append(
+            f"<li><strong>Agent exposure count:</strong> "
+            f"{_escape(finding.entities['agent_count'])}</li>"
+        )
+
+    if not items:
+        return ""
+    return '<div class="evidence"><h4>Evidence</h4><ul>' + "".join(items) + "</ul></div>"
 
 
 def _finding_card(graph: CogniGraph, finding: Finding, index: int) -> str:
@@ -165,6 +216,11 @@ def _finding_card(graph: CogniGraph, finding: Finding, index: int) -> str:
       </div>
       <p>{_escape(finding.description)}</p>
       {_path_view(graph, finding.path)}
+      {_finding_evidence(graph, finding)}
+      <div class="recommended-control">
+        <h4>Recommended Control</h4>
+        <p>{_escape(finding.recommended_control)}</p>
+      </div>
       <details>
         <summary>Explanation and entities</summary>
         <p>{_escape(explanation)}</p>
@@ -414,6 +470,22 @@ def format_html_report(
       margin-top: 12px;
       padding-top: 10px;
     }}
+    h4 {{
+      margin: 0 0 6px;
+      font-size: 14px;
+    }}
+    .evidence, .recommended-control {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 12px 0;
+      background: #fafbfd;
+    }}
+    .evidence ul {{
+      margin: 0;
+      padding-left: 18px;
+    }}
+    .recommended-control p {{ margin: 0; color: var(--muted); }}
     summary {{ cursor: pointer; font-weight: 700; }}
     dl {{
       display: grid;

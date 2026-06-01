@@ -11,6 +11,34 @@ DANGEROUS_PAIRS: list[tuple[str, str]] = [
     ("BrowserAutomation", "CredentialAccess"),
 ]
 
+RECOMMENDED_CONTROLS: dict[str, str] = {
+    "R001": (
+        "Restrict low-trust context from reaching this capability, remove the "
+        "agent-to-tool invocation edge if unnecessary, or require approval "
+        "before the capability can be used."
+    ),
+    "R002": (
+        "Narrow or remove the capability binding to the sensitive resource, "
+        "reduce the resource sensitivity exposure, or place an approval "
+        "boundary before access."
+    ),
+    "R003": (
+        "Split the dangerous capability pair across separate agents, tools, "
+        "MCP servers, or approval boundaries so one agent cannot compose both "
+        "actions."
+    ),
+    "R004": (
+        "Reduce the number of agents that can invoke this MCP-backed "
+        "capability, split critical tools onto a dedicated server, or lower "
+        "server exposure."
+    ),
+    "R005": (
+        "Add a trust boundary between low-trust input and the higher-trust "
+        "agent, sanitize or restrict the context source, or remove downstream "
+        "critical capability access."
+    ),
+}
+
 
 def _reachable_capabilities_with_paths(
     graph: CogniGraph, agent_id: str, max_depth: int
@@ -55,6 +83,7 @@ def low_trust_to_critical_capability(
                             "agent": agent_id,
                             "capability": cap_id,
                         },
+                        recommended_control=RECOMMENDED_CONTROLS["R001"],
                     ))
     return findings
 
@@ -93,6 +122,7 @@ def low_trust_to_sensitive_resource(
                                 "capability": cap_id,
                                 "resource": res_id,
                             },
+                            recommended_control=RECOMMENDED_CONTROLS["R002"],
                         ))
     return findings
 
@@ -122,6 +152,7 @@ def dangerous_capability_composition(
                         "capability_a": cap_a,
                         "capability_b": cap_b,
                     },
+                    recommended_control=RECOMMENDED_CONTROLS["R003"],
                 ))
     return findings
 
@@ -166,6 +197,7 @@ def overprivileged_mcp_exposure(
                     "mcp_server": server_id,
                     "agent_count": str(len(invoking_agents)),
                 },
+                recommended_control=RECOMMENDED_CONTROLS["R004"],
             ))
     return findings
 
@@ -212,6 +244,7 @@ def trust_boundary_crossing(
                             "agent": agent_id,
                             "capability": cap_id,
                         },
+                        recommended_control=RECOMMENDED_CONTROLS["R005"],
                     ))
     return findings
 

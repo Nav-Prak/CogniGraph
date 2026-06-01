@@ -18,3 +18,4 @@ class Finding(BaseModel, frozen=True):
     severity: FindingSeverity
     path: list[str]
     entities: dict[str, str]
+    recommended_control: str

@@ -18,6 +18,7 @@ def _make_finding(**overrides) -> Finding:
         "severity": FindingSeverity.HIGH,
         "path": ["a", "b", "c"],
         "entities": {"agent": "a"},
+        "recommended_control": "Do the safer thing.",
     }
     defaults.update(overrides)
     return Finding(**defaults)
@@ -43,6 +44,11 @@ class TestFormatFinding:
         f = _make_finding(description="something bad")
         text = format_finding(f, 1)
         assert "something bad" in text
+
+    def test_contains_recommended_control(self):
+        f = _make_finding(recommended_control="Restrict the risky edge.")
+        text = format_finding(f, 1)
+        assert "Recommended control: Restrict the risky edge." in text
 
 
 class TestFormatReport:
@@ -91,7 +97,9 @@ class TestFindingsToJson:
         entry = parsed[0]
         assert entry["rule_id"] == "R001"
         assert entry["title"] == "Test finding"
+        assert entry["severity"] == "HIGH"
         assert entry["path"] == ["a", "b", "c"]
+        assert entry["recommended_control"] == "Do the safer thing."
 
 
 class TestFormatHtmlReport:
@@ -111,6 +119,8 @@ class TestFormatHtmlReport:
         assert "filesystem_tool" in html
         assert "SecretRead" in html
         assert "trust_level=2" in html
+        assert "Recommended Control" in html
+        assert "Restrict low-trust context" in html
 
     def test_escapes_finding_content(self, sample_graph):
         finding = _make_finding(

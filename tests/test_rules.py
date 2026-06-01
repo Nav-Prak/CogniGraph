@@ -107,3 +107,9 @@ class TestRunAllRules:
         findings = run_all_rules(sample_graph, sample_config.analysis)
         # R001: 4, R002: 2, R003: 1, R004: 0, R005: 4 = 11
         assert len(findings) == 11
+
+    def test_all_findings_have_recommended_controls(self, sample_graph: CogniGraph, sample_config: FixtureConfig):
+        findings = run_all_rules(sample_graph, sample_config.analysis)
+        assert findings
+        for finding in findings:
+            assert finding.recommended_control
