@@ -60,6 +60,9 @@ uv run cognigraph fixtures/sample_fixture.yaml --findings-json findings.json
 # Export a static HTML report with finding paths and node metadata
 uv run cognigraph fixtures/sample_fixture.yaml --html-report report.html
 
+# Overlay a simple runtime trace on the static graph
+uv run cognigraph fixtures/sample_fixture.yaml --trace fixtures/sample_trace.json --html-report report.html
+
 # Suppress stdout report (useful when only exporting)
 uv run cognigraph fixtures/sample_fixture.yaml --quiet --export-dot graph.dot
 
@@ -68,6 +71,42 @@ dot -Tpng graph.dot -o graph.png
 ```
 
 Exit codes: `0` = no findings, `1` = error, `2` = findings detected.
+
+## Runtime Trace Overlay
+
+CogniGraph has a small internal JSON trace format for runtime overlays. It is not a direct Observal or OpenTelemetry format yet; external trace systems should map into this internal format through adapters.
+
+```json
+{
+  "trace_id": "trace-001",
+  "events": [
+    {
+      "timestamp": "2026-05-01T10:00:00Z",
+      "source_id": "external_webpage",
+      "target_id": "planner_agent",
+      "edge_type": "PASSED_TO",
+      "metadata": {"trigger": "rag_retrieval"}
+    }
+  ]
+}
+```
+
+Supported runtime edge types:
+
+| Runtime edge | Intended meaning |
+|--------------|------------------|
+| `PASSED_TO` | Context or data passed into an agent |
+| `RETRIEVED_FROM` | Context retrieved from a source |
+| `INVOKED` | Agent or tool invoked another tool |
+| `READ_FROM` | Tool read from a resource |
+| `WROTE_TO` | Tool wrote to a resource |
+| `EXECUTED_IN` | Agent or tool executed in an environment |
+
+Overlay semantics:
+
+- Direct runtime events only mark static edges observed when the runtime edge type is compatible with the static edge.
+- Tool-to-resource runtime events are projected onto declared capability paths when possible. For example, `filesystem_tool READ_FROM ssh_private_key` maps to `filesystem_tool -> SecretRead -> ssh_private_key`.
+- Events that cannot match or project onto the static graph are reported as unexpected runtime-only edges.
 
 ## Writing a Fixture
 

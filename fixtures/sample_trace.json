@@ -5,7 +5,7 @@
       "timestamp": "2026-05-01T10:00:00Z",
       "source_id": "external_webpage",
       "target_id": "planner_agent",
-      "edge_type": "INVOKED",
+      "edge_type": "PASSED_TO",
       "metadata": {"trigger": "rag_retrieval"}
     },
     {

@@ -90,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         if overlay_result:
             print("\n--- Runtime Overlay Summary ---")
             print(f"Observed edges: {overlay_result.observed_count}")
+            print(f"Projected paths: {overlay_result.projected_count}")
             print(f"Unexpected edges: {overlay_result.unexpected_count}")
             if overlay_result.unmatched_nodes:
                 print(f"Unmatched nodes: {', '.join(overlay_result.unmatched_nodes)}")

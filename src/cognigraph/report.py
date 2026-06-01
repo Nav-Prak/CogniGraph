@@ -252,6 +252,7 @@ def _overlay_summary_html(graph: CogniGraph, overlay_result: Any | None) -> str:
       </div>
       <div class="metric-grid">
         <div><span>{getattr(overlay_result, "observed_count", 0)}</span><small>observed events</small></div>
+        <div><span>{getattr(overlay_result, "projected_count", 0)}</span><small>projected paths</small></div>
         <div><span>{getattr(overlay_result, "unexpected_count", 0)}</span><small>unexpected events</small></div>
         <div><span>{len(runtime_only)}</span><small>runtime-only edges</small></div>
         <div><span>{coverage:.0f}%</span><small>Static edge coverage</small></div>

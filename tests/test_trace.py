@@ -110,6 +110,7 @@ class TestOverlayResult:
         assert result.observed_count == 0
         assert result.unexpected_count == 0
         assert result.unmatched_nodes == []
+        assert result.projected_count == 0
 
 
 class TestOverlay:
@@ -130,6 +131,68 @@ class TestOverlay:
         assert result.unexpected_count == 0
         edge_data = sample_graph._graph["planner_agent"]["filesystem_tool"]
         assert edge_data.get("observed") is True
+
+    def test_apply_overlay_rejects_incompatible_runtime_type(self, sample_graph):
+        trace = TraceLog(
+            trace_id="t1",
+            events=[
+                TraceEvent(
+                    timestamp="2026-05-01T10:00:00Z",
+                    source_id="planner_agent",
+                    target_id="filesystem_tool",
+                    edge_type=RuntimeEdgeType.READ_FROM,
+                ),
+            ],
+        )
+        result = apply_overlay(sample_graph, trace)
+        assert result.observed_count == 0
+        assert result.unexpected_count == 1
+        edge_data = sample_graph._graph["planner_agent"]["filesystem_tool"]
+        assert edge_data.get("observed") is None
+
+    def test_apply_overlay_projects_tool_resource_read_to_capability_path(self, sample_graph):
+        trace = TraceLog(
+            trace_id="t1",
+            events=[
+                TraceEvent(
+                    timestamp="2026-05-01T10:00:00Z",
+                    source_id="filesystem_tool",
+                    target_id="ssh_private_key",
+                    edge_type=RuntimeEdgeType.READ_FROM,
+                ),
+            ],
+        )
+        result = apply_overlay(sample_graph, trace)
+        assert result.observed_count == 1
+        assert result.unexpected_count == 0
+        assert result.projected_paths == [
+            ["filesystem_tool", "SecretRead", "ssh_private_key"]
+        ]
+        assert not sample_graph._graph.has_edge("filesystem_tool", "ssh_private_key")
+        assert sample_graph._graph["filesystem_tool"]["SecretRead"].get("observed") is True
+        assert sample_graph._graph["SecretRead"]["ssh_private_key"].get("observed") is True
+
+    def test_apply_overlay_projects_tool_resource_write_to_capability_path(self, sample_graph):
+        trace = TraceLog(
+            trace_id="t1",
+            events=[
+                TraceEvent(
+                    timestamp="2026-05-01T10:00:00Z",
+                    source_id="github_tool",
+                    target_id="github_repository",
+                    edge_type=RuntimeEdgeType.WROTE_TO,
+                ),
+            ],
+        )
+        result = apply_overlay(sample_graph, trace)
+        assert result.observed_count == 1
+        assert result.unexpected_count == 0
+        assert result.projected_paths == [
+            ["github_tool", "GitHubPush", "github_repository"]
+        ]
+        assert not sample_graph._graph.has_edge("github_tool", "github_repository")
+        assert sample_graph._graph["github_tool"]["GitHubPush"].get("observed") is True
+        assert sample_graph._graph["GitHubPush"]["github_repository"].get("observed") is True
 
     def test_apply_overlay_adds_runtime_edges(self, sample_graph):
         trace = TraceLog(
@@ -183,7 +246,9 @@ class TestOverlay:
     def test_full_sample_trace_overlay(self, sample_graph):
         trace = load_trace(FIXTURES_DIR / "sample_trace.json")
         result = apply_overlay(sample_graph, trace)
-        assert result.observed_count > 0
+        assert result.observed_count == 5
+        assert result.unexpected_count == 0
+        assert result.projected_count == 2
 
     def test_get_exercised_static_edges(self, sample_graph):
         trace = TraceLog(
@@ -223,6 +288,22 @@ class TestOverlay:
         runtime_only = get_runtime_only_edges(sample_graph)
         assert ("planner_agent", "ssh_private_key") in runtime_only
 
+    def test_projected_events_are_not_runtime_only_edges(self, sample_graph):
+        trace = TraceLog(
+            trace_id="t1",
+            events=[
+                TraceEvent(
+                    timestamp="2026-05-01T10:00:00Z",
+                    source_id="filesystem_tool",
+                    target_id="ssh_private_key",
+                    edge_type=RuntimeEdgeType.READ_FROM,
+                ),
+            ],
+        )
+        apply_overlay(sample_graph, trace)
+        runtime_only = get_runtime_only_edges(sample_graph)
+        assert ("filesystem_tool", "ssh_private_key") not in runtime_only
+
 
 class TestCLIWithTrace:
     SAMPLE = str(FIXTURES_DIR / "sample_fixture.yaml")
@@ -235,6 +316,7 @@ class TestCLIWithTrace:
         out = capsys.readouterr().out
         assert "Runtime Overlay Summary" in out
         assert "Observed edges:" in out
+        assert "Projected paths:" in out
 
     def test_trace_flag_quiet(self, capsys):
         from cognigraph.cli import main
@@ -251,7 +333,8 @@ class TestCLIWithTrace:
         main([self.SAMPLE, "--trace", self.TRACE, "--quiet", "--export-dot", str(dot_path)])
         content = dot_path.read_text()
         assert "digraph CogniGraph" in content
-        assert "dashed" in content or "runtime" in content.lower() or "observed" in content.lower()
+        assert 'color="#2a9d8f"' in content
+        assert "penwidth=2.5" in content
 
     def test_trace_flag_with_html_report(self, tmp_path):
         from cognigraph.cli import main
@@ -261,6 +344,7 @@ class TestCLIWithTrace:
         content = html_path.read_text()
         assert "Runtime Overlay" in content
         assert "runtime-only edges" in content
+        assert "projected paths" in content
         assert "Static edge coverage" in content
 
     def test_bad_trace_returns_1(self, tmp_path, capsys):
