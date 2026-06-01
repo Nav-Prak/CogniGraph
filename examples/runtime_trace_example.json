@@ -1,0 +1,40 @@
+{
+  "trace_id": "demo-trace-001",
+  "events": [
+    {
+      "timestamp": "2026-05-01T10:00:00Z",
+      "source_id": "external_webpage",
+      "target_id": "research_planner",
+      "edge_type": "PASSED_TO",
+      "metadata": {"trigger": "rag_retrieval"}
+    },
+    {
+      "timestamp": "2026-05-01T10:00:01Z",
+      "source_id": "research_planner",
+      "target_id": "filesystem_tool",
+      "edge_type": "INVOKED",
+      "metadata": {"action": "read_file"}
+    },
+    {
+      "timestamp": "2026-05-01T10:00:02Z",
+      "source_id": "filesystem_tool",
+      "target_id": "ssh_private_key",
+      "edge_type": "READ_FROM",
+      "metadata": {"path": "~/.ssh/id_rsa"}
+    },
+    {
+      "timestamp": "2026-05-01T10:00:03Z",
+      "source_id": "research_planner",
+      "target_id": "github_tool",
+      "edge_type": "INVOKED",
+      "metadata": {"action": "push_commit"}
+    },
+    {
+      "timestamp": "2026-05-01T10:00:04Z",
+      "source_id": "github_tool",
+      "target_id": "github_repository",
+      "edge_type": "WROTE_TO",
+      "metadata": {"ref": "refs/heads/main"}
+    }
+  ]
+}

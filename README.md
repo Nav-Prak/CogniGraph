@@ -6,7 +6,7 @@ Agentic AI systems compose LLM planners, MCP servers, tools, retrieval systems, 
 
 > What dangerous capabilities can low-trust context reach?
 
-It takes a YAML fixture describing your system's agents, tools, MCP servers, capabilities, and resources, builds a privilege graph, and runs detection rules to find dangerous paths — like untrusted web content reaching shell execution, or a single agent having both secret-read and network-send capabilities.
+It takes a YAML fixture describing your system's agents, tools, MCP servers, capabilities, and resources, builds a privilege graph, and runs detection rules to find dangerous paths, like untrusted web content reaching secret access, or a single agent having both secret-read and network-send capabilities.
 
 ## Prerequisites
 
@@ -21,11 +21,13 @@ It takes a YAML fixture describing your system's agents, tools, MCP servers, cap
 git clone <repo-url> && cd Hound-AI
 uv sync
 
-# Run the analysis against the sample fixture
-uv run cognigraph fixtures/sample_fixture.yaml
+# Run the five-minute MVP demo
+uv run cognigraph examples/rag_mcp_vulnerable.yaml --html-report report.html --findings-json findings.json
 ```
 
-This loads the sample fixture, builds the graph, runs all detection rules, and prints a report:
+This loads a vulnerable RAG/MCP fixture, builds the graph, runs all detection rules, writes a static HTML report, and exports structured JSON findings. Open `report.html` to inspect the risky paths, node metadata, and recommended controls.
+
+The CLI also prints a text report:
 
 ```
 CogniGraph Analysis Report
@@ -38,33 +40,46 @@ Total findings: 11
 --- Finding 1 ---
 [R001] [CRITICAL] Low-trust context reaches critical capability
   Low-trust context 'external_webpage' can reach capability 'SecretRead' (severity 4)
-  Path: external_webpage -> planner_agent -> filesystem_tool -> SecretRead
+  Path: external_webpage -> research_planner -> filesystem_tool -> SecretRead
+  Recommended control: Restrict low-trust context from reaching this capability...
 ...
 ```
+
+## MVP Examples
+
+The `examples/` directory contains the core demo fixtures:
+
+| Fixture | Purpose | Expected result |
+|---------|---------|-----------------|
+| `examples/rag_mcp_vulnerable.yaml` | Low-trust web/RAG context reaches secret, repository, and network capabilities | R001, R002, R003, and R005 findings |
+| `examples/least_privilege_safe.yaml` | Low-trust input can only reach low-severity documentation search over low-sensitivity public docs | No findings |
+| `examples/overexposed_mcp.yaml` | Three agents can invoke one MCP-backed critical capability with threshold set to `3` | R004 finding |
+
+A safe fixture means no low-trust context can reach severity `>= 3` capabilities, no low-trust context can reach sensitivity `>= 3` resources, no agent can compose a configured dangerous capability pair, no MCP server exceeds the overexposure threshold, and no higher-trust agent consuming low-trust context has downstream critical capability access.
 
 ## CLI Usage
 
 ```bash
 # Print findings report to stdout
-uv run cognigraph fixtures/sample_fixture.yaml
+uv run cognigraph examples/rag_mcp_vulnerable.yaml
 
 # Export graph as Graphviz DOT (finding paths highlighted in red)
-uv run cognigraph fixtures/sample_fixture.yaml --export-dot graph.dot
+uv run cognigraph examples/rag_mcp_vulnerable.yaml --export-dot graph.dot
 
 # Export graph as JSON
-uv run cognigraph fixtures/sample_fixture.yaml --export-json graph.json
+uv run cognigraph examples/rag_mcp_vulnerable.yaml --export-json graph.json
 
 # Export findings as structured JSON
-uv run cognigraph fixtures/sample_fixture.yaml --findings-json findings.json
+uv run cognigraph examples/rag_mcp_vulnerable.yaml --findings-json findings.json
 
 # Export a static HTML report with finding paths and node metadata
-uv run cognigraph fixtures/sample_fixture.yaml --html-report report.html
+uv run cognigraph examples/rag_mcp_vulnerable.yaml --html-report report.html
 
-# Overlay a simple runtime trace on the static graph
-uv run cognigraph fixtures/sample_fixture.yaml --trace fixtures/sample_trace.json --html-report report.html
+# Preview: overlay a simple runtime trace on the static graph
+uv run cognigraph examples/rag_mcp_vulnerable.yaml --trace examples/runtime_trace_example.json --html-report report.html
 
 # Suppress stdout report (useful when only exporting)
-uv run cognigraph fixtures/sample_fixture.yaml --quiet --export-dot graph.dot
+uv run cognigraph examples/rag_mcp_vulnerable.yaml --quiet --export-dot graph.dot
 
 # Render the DOT file to PNG (requires Graphviz installed)
 dot -Tpng graph.dot -o graph.png
@@ -72,9 +87,11 @@ dot -Tpng graph.dot -o graph.png
 
 Exit codes: `0` = no findings, `1` = error, `2` = findings detected.
 
-## Runtime Trace Overlay
+Structured JSON findings include the rule ID, severity, path, entities, and deterministic `recommended_control` guidance.
 
-CogniGraph has a small internal JSON trace format for runtime overlays. It is not a direct Observal or OpenTelemetry format yet; external trace systems should map into this internal format through adapters.
+## Runtime Trace Overlay Preview
+
+CogniGraph has a small internal JSON trace format for runtime overlays. This is a preview feature, not a core MVP requirement. It is not a direct Observal or OpenTelemetry format yet; external trace systems should map into this internal format through adapters.
 
 ```json
 {
@@ -83,7 +100,7 @@ CogniGraph has a small internal JSON trace format for runtime overlays. It is no
     {
       "timestamp": "2026-05-01T10:00:00Z",
       "source_id": "external_webpage",
-      "target_id": "planner_agent",
+      "target_id": "research_planner",
       "edge_type": "PASSED_TO",
       "metadata": {"trigger": "rag_retrieval"}
     }

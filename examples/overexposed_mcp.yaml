@@ -1,0 +1,44 @@
+analysis:
+  max_tool_invocation_depth: 5
+  max_path_length: 8
+  overexposure_agent_threshold: 3
+
+agents:
+  - id: incident_agent
+    trust_level: 2
+    can_invoke:
+      - privileged_secret_tool
+
+  - id: deployment_agent
+    trust_level: 2
+    can_invoke:
+      - privileged_secret_tool
+
+  - id: maintenance_agent
+    trust_level: 2
+    can_invoke:
+      - privileged_secret_tool
+
+tools:
+  - id: privileged_secret_tool
+    mcp_server: critical_ops_mcp
+    can_invoke: []
+    capabilities:
+      - SecretRead
+
+mcp_servers:
+  - id: critical_ops_mcp
+
+capabilities:
+  - id: SecretRead
+    severity: 4
+    resource_binding_required: true
+
+resources:
+  - id: production_secret
+    type: secret
+    sensitivity: 4
+
+capability_bindings:
+  - capability: SecretRead
+    resource: production_secret

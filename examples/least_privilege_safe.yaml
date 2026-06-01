@@ -1,0 +1,41 @@
+analysis:
+  max_tool_invocation_depth: 5
+  max_path_length: 8
+  overexposure_agent_threshold: 3
+
+context_sources:
+  - id: user_question
+    source_type: user_input
+    trust_level: 1
+
+agents:
+  - id: support_agent
+    trust_level: 1
+    consumes:
+      - user_question
+    can_invoke:
+      - docs_search_tool
+
+tools:
+  - id: docs_search_tool
+    mcp_server: docs_mcp
+    can_invoke: []
+    capabilities:
+      - DocumentationSearch
+
+mcp_servers:
+  - id: docs_mcp
+
+capabilities:
+  - id: DocumentationSearch
+    severity: 2
+    resource_binding_required: true
+
+resources:
+  - id: public_docs
+    type: filesystem_path
+    sensitivity: 1
+
+capability_bindings:
+  - capability: DocumentationSearch
+    resource: public_docs
