@@ -5,7 +5,7 @@ import pytest
 
 from cognigraph.graph.builder import CogniGraph, build_from_fixture
 from cognigraph.schemas.enums import RuntimeEdgeType
-from cognigraph.trace.loader import load_trace
+from cognigraph.trace.loader import TraceLoadError, load_trace, trace_from_otlp_json
 from cognigraph.trace.models import TraceEvent, TraceLog
 from cognigraph.trace.overlay import (
     OverlayResult,
@@ -102,6 +102,66 @@ class TestTraceLoader:
         bad.write_text(json.dumps({"trace_id": "t1", "events": [{"bad": "data"}]}))
         with pytest.raises(Exception):
             load_trace(bad)
+
+    def test_load_otlp_trace(self):
+        trace = load_trace(FIXTURES_DIR / "sample_otlp_trace.json", trace_format="otlp-json")
+        assert trace.trace_id == "4bf92f3577b34da6a3ce929d0e0e4736"
+        assert len(trace.events) == 3
+        assert trace.events[0].source_id == "external_webpage"
+        assert trace.events[0].target_id == "planner_agent"
+        assert trace.events[0].edge_type == RuntimeEdgeType.PASSED_TO
+        assert trace.events[0].metadata == {"trigger": "rag_retrieval"}
+
+    def test_load_trace_rejects_unknown_format(self):
+        with pytest.raises(TraceLoadError, match="Unsupported trace format"):
+            load_trace(FIXTURES_DIR / "sample_trace.json", trace_format="unknown")
+
+    def test_otlp_trace_skips_unannotated_spans(self):
+        raw = {
+            "resourceSpans": [
+                {
+                    "scopeSpans": [
+                        {
+                            "spans": [
+                                {
+                                    "name": "ordinary span",
+                                    "attributes": [
+                                        {
+                                            "key": "http.route",
+                                            "value": {"stringValue": "/health"},
+                                        }
+                                    ],
+                                },
+                                {
+                                    "name": "annotated span",
+                                    "attributes": [
+                                        {
+                                            "key": "cognigraph.source_id",
+                                            "value": {"stringValue": "a"},
+                                        },
+                                        {
+                                            "key": "cognigraph.target_id",
+                                            "value": {"stringValue": "b"},
+                                        },
+                                        {
+                                            "key": "cognigraph.edge_type",
+                                            "value": {"stringValue": "INVOKED"},
+                                        },
+                                    ],
+                                },
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+        trace = trace_from_otlp_json(raw)
+        assert len(trace.events) == 1
+        assert trace.events[0].source_id == "a"
+
+    def test_otlp_trace_requires_cognigraph_attributes(self):
+        with pytest.raises(TraceLoadError, match="did not contain any spans"):
+            trace_from_otlp_json({"resourceSpans": []})
 
 
 class TestOverlayResult:
@@ -250,6 +310,13 @@ class TestOverlay:
         assert result.unexpected_count == 0
         assert result.projected_count == 2
 
+    def test_full_otlp_trace_overlay(self, sample_graph):
+        trace = load_trace(FIXTURES_DIR / "sample_otlp_trace.json", trace_format="otlp-json")
+        result = apply_overlay(sample_graph, trace)
+        assert result.observed_count == 3
+        assert result.unexpected_count == 0
+        assert result.projected_count == 1
+
     def test_get_exercised_static_edges(self, sample_graph):
         trace = TraceLog(
             trace_id="t1",
@@ -348,6 +415,16 @@ class TestCLIWithTrace:
         assert "Static edge coverage" in content
         assert "Graph Visualizer" in content
         assert "observed-edge" in content
+
+    def test_trace_format_otlp_json(self, capsys):
+        from cognigraph.cli import main
+
+        trace = str(FIXTURES_DIR / "sample_otlp_trace.json")
+        rc = main([self.SAMPLE, "--trace", trace, "--trace-format", "otlp-json"])
+        out = capsys.readouterr().out
+        assert rc == 2
+        assert "Runtime Overlay Summary" in out
+        assert "Observed edges: 3" in out
 
     def test_bad_trace_returns_1(self, tmp_path, capsys):
         from cognigraph.cli import main

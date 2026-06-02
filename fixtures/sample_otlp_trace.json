@@ -1,0 +1,93 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {"stringValue": "cognigraph-demo"}
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "cognigraph-demo"},
+          "spans": [
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "00f067aa0ba902b7",
+              "name": "pass retrieved webpage to planner",
+              "startTimeUnixNano": "1714567200000000000",
+              "attributes": [
+                {
+                  "key": "cognigraph.source_id",
+                  "value": {"stringValue": "external_webpage"}
+                },
+                {
+                  "key": "cognigraph.target_id",
+                  "value": {"stringValue": "planner_agent"}
+                },
+                {
+                  "key": "cognigraph.edge_type",
+                  "value": {"stringValue": "PASSED_TO"}
+                },
+                {
+                  "key": "trigger",
+                  "value": {"stringValue": "rag_retrieval"}
+                }
+              ]
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "00f067aa0ba902b8",
+              "name": "invoke filesystem tool",
+              "startTimeUnixNano": "1714567201000000000",
+              "attributes": [
+                {
+                  "key": "cognigraph.source_id",
+                  "value": {"stringValue": "planner_agent"}
+                },
+                {
+                  "key": "cognigraph.target_id",
+                  "value": {"stringValue": "filesystem_tool"}
+                },
+                {
+                  "key": "cognigraph.edge_type",
+                  "value": {"stringValue": "INVOKED"}
+                },
+                {
+                  "key": "action",
+                  "value": {"stringValue": "read_file"}
+                }
+              ]
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "00f067aa0ba902b9",
+              "name": "read private key",
+              "startTimeUnixNano": "1714567202000000000",
+              "attributes": [
+                {
+                  "key": "cognigraph.source_id",
+                  "value": {"stringValue": "filesystem_tool"}
+                },
+                {
+                  "key": "cognigraph.target_id",
+                  "value": {"stringValue": "ssh_private_key"}
+                },
+                {
+                  "key": "cognigraph.edge_type",
+                  "value": {"stringValue": "READ_FROM"}
+                },
+                {
+                  "key": "path",
+                  "value": {"stringValue": "~/.ssh/id_rsa"}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

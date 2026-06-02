@@ -57,6 +57,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to JSON runtime trace file to overlay on the graph",
     )
     parser.add_argument(
+        "--trace-format",
+        choices=["internal", "otlp-json"],
+        default="internal",
+        help="Trace input format. Defaults to CogniGraph's internal JSON format.",
+    )
+    parser.add_argument(
         "--annotations",
         type=Path,
         metavar="PATH",
@@ -83,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     overlay_result = None
     if args.trace:
         try:
-            trace = load_trace(args.trace)
+            trace = load_trace(args.trace, trace_format=args.trace_format)
         except Exception as e:
             print(f"Error loading trace: {e}", file=sys.stderr)
             return 1

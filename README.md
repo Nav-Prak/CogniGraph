@@ -82,6 +82,9 @@ uv run cognigraph examples/rag_mcp_vulnerable.yaml --html-report report.html
 # Preview: overlay a simple runtime trace on the static graph
 uv run cognigraph examples/rag_mcp_vulnerable.yaml --trace examples/runtime_trace_example.json --html-report report.html
 
+# Preview: overlay explicit CogniGraph attributes from OTLP-style JSON spans
+uv run cognigraph fixtures/sample_fixture.yaml --trace fixtures/sample_otlp_trace.json --trace-format otlp-json --html-report report.html
+
 # Suppress stdout report (useful when only exporting)
 uv run cognigraph examples/rag_mcp_vulnerable.yaml --quiet --export-dot graph.dot
 
@@ -128,6 +131,18 @@ Overlay semantics:
 - Direct runtime events only mark static edges observed when the runtime edge type is compatible with the static edge.
 - Tool-to-resource runtime events are projected onto declared capability paths when possible. For example, `filesystem_tool READ_FROM ssh_private_key` maps to `filesystem_tool -> SecretRead -> ssh_private_key`.
 - Events that cannot match or project onto the static graph are reported as unexpected runtime-only edges.
+
+### OTLP-Style JSON Adapter
+
+`--trace-format otlp-json` reads OpenTelemetry-style JSON span exports and converts spans into CogniGraph trace events only when the span has all three explicit attributes:
+
+| Attribute | Meaning |
+|-----------|---------|
+| `cognigraph.source_id` | Existing CogniGraph source node ID |
+| `cognigraph.target_id` | Existing CogniGraph target node ID |
+| `cognigraph.edge_type` | Runtime edge type such as `INVOKED`, `PASSED_TO`, `READ_FROM`, or `WROTE_TO` |
+
+Unannotated spans are ignored. This adapter does not infer security semantics from arbitrary telemetry; it only normalizes human- or instrumentation-supplied CogniGraph attributes.
 
 ## Writing a Fixture
 
