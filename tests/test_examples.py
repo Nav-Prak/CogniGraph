@@ -53,6 +53,19 @@ class TestMVPExamples:
             f.model_dump() for f in inline_findings
         ]
 
+    def test_heuristic_mapping_produces_same_vulnerable_findings(self):
+        config = load_fixture(
+            EXAMPLES_DIR / "rag_mcp_unannotated.yaml",
+            infer_capabilities=True,
+        )
+        graph = build_from_fixture(config)
+        heuristic_findings = run_all_rules(graph, config.analysis)
+
+        _, _, inline_findings = _run_example("rag_mcp_vulnerable.yaml")
+        assert [f.model_dump() for f in heuristic_findings] == [
+            f.model_dump() for f in inline_findings
+        ]
+
     def test_safe_fixture_produces_no_findings(self):
         _, _, findings = _run_example("least_privilege_safe.yaml")
         assert findings == []

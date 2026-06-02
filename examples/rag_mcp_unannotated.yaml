@@ -19,10 +19,12 @@ agents:
 
 tools:
   - id: filesystem_tool
+    description: Read files and secrets from the local filesystem.
     mcp_server: filesystem_mcp
     can_invoke: []
 
   - id: github_tool
+    description: Push commits to GitHub and send data to external APIs.
     mcp_server: github_mcp
     can_invoke: []
 

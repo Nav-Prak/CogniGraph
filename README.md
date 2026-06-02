@@ -76,6 +76,9 @@ uv run cognigraph examples/rag_mcp_vulnerable.yaml --findings-json findings.json
 # Apply manual tool capability annotations to a fixture
 uv run cognigraph examples/rag_mcp_unannotated.yaml --annotations examples/manual_tool_annotations.yaml
 
+# Preview: infer tool capabilities from tool IDs/descriptions with deterministic keyword rules
+uv run cognigraph examples/rag_mcp_unannotated.yaml --infer-capabilities
+
 # Export a static HTML report with finding paths and node metadata
 uv run cognigraph examples/rag_mcp_vulnerable.yaml --html-report report.html
 
@@ -187,6 +190,18 @@ uv run cognigraph examples/rag_mcp_unannotated.yaml --annotations examples/manua
 ```
 
 Annotations are deterministic overlays. Unknown tools, unknown capabilities, and missing required resource bindings are rejected during fixture validation.
+
+### Heuristic Capability Mapping Preview
+
+`--infer-capabilities` applies simple keyword rules to tool IDs and optional tool descriptions:
+
+```yaml
+tools:
+  - id: filesystem_tool
+    description: Read files and secrets from the local filesystem.
+```
+
+The mapper only adds capabilities already declared in the fixture. It does not create new capability definitions and does not use an LLM. Treat it as a convenience layer after manual annotations, not as a source of authority for the security graph.
 
 ### Node Types
 

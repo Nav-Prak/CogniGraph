@@ -24,6 +24,7 @@ class AgentConfig(BaseModel, frozen=True):
 
 class ToolConfig(BaseModel, frozen=True):
     id: str
+    description: str | None = None
     mcp_server: str | None = None
     can_invoke: list[str] = Field(default_factory=list)
     capabilities: list[str] = Field(default_factory=list)
