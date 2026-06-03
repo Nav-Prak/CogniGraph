@@ -4,9 +4,19 @@ from pathlib import Path
 import pytest
 
 from cognigraph.graph.builder import CogniGraph, build_from_fixture
-from cognigraph.schemas.enums import RuntimeEdgeType
-from cognigraph.trace.loader import load_trace
-from cognigraph.trace.models import TraceEvent, TraceLog
+from cognigraph.schemas.enums import NodeType, RuntimeEdgeType
+from cognigraph.trace.loader import (
+    available_trace_formats,
+    get_trace_adapter,
+    load_trace,
+)
+from cognigraph.trace.models import (
+    TRACE_SCHEMA,
+    TraceEvent,
+    TraceLog,
+    TraceNodeRef,
+    TraceSource,
+)
 from cognigraph.trace.overlay import (
     OverlayResult,
     apply_overlay,
@@ -19,6 +29,20 @@ FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 
 
 class TestTraceModels:
+    def test_trace_source_construction(self):
+        source = TraceSource(
+            type="otlp_mcp",
+            name="opentelemetry",
+            version="1.41.0",
+        )
+        assert source.type == "otlp_mcp"
+        assert source.name == "opentelemetry"
+
+    def test_trace_node_ref_construction(self):
+        ref = TraceNodeRef(id="tool.github", type=NodeType.TOOL, name="github")
+        assert ref.id == "tool.github"
+        assert ref.type == NodeType.TOOL
+
     def test_trace_event_construction(self):
         event = TraceEvent(
             timestamp="2026-05-01T10:00:00Z",
@@ -29,6 +53,25 @@ class TestTraceModels:
         assert event.source_id == "agent_a"
         assert event.edge_type == RuntimeEdgeType.INVOKED
         assert event.metadata == {}
+
+    def test_trace_event_derives_ids_from_refs(self):
+        event = TraceEvent(
+            id="event-001",
+            timestamp="2026-05-01T10:00:00Z",
+            source_ref={"id": "agent_a", "type": "Agent", "name": "Agent A"},
+            target_ref={"id": "tool_b", "type": "Tool", "name": "Tool B"},
+            edge_type=RuntimeEdgeType.INVOKED,
+            status="ok",
+            duration_ms=12.5,
+            origin={"trace_id": "external-trace", "span_id": "span-1"},
+            evidence={"operation": "tools/call", "tool_name": "tool_b"},
+            attributes={"adapter": "test"},
+        )
+        assert event.source_id == "agent_a"
+        assert event.target_id == "tool_b"
+        assert event.source_ref is not None
+        assert event.source_ref.type == NodeType.AGENT
+        assert event.evidence["operation"] == "tools/call"
 
     def test_trace_event_with_metadata(self):
         event = TraceEvent(
@@ -69,8 +112,22 @@ class TestTraceModels:
             )
         ]
         log = TraceLog(trace_id="trace-001", events=events)
+        assert log.schema_version == TRACE_SCHEMA
+        assert log.model_dump(by_alias=True)["schema"] == TRACE_SCHEMA
         assert log.trace_id == "trace-001"
         assert len(log.events) == 1
+
+    def test_trace_log_with_source_metadata(self):
+        log = TraceLog(
+            trace_id="trace-001",
+            session_id="session-001",
+            source={"type": "internal-json", "name": "CogniGraph fixture"},
+            events=[],
+        )
+        assert log.schema_version == "cognigraph.trace.v1"
+        assert log.session_id == "session-001"
+        assert log.source is not None
+        assert log.source.type == "internal-json"
 
     def test_trace_log_frozen(self):
         log = TraceLog(trace_id="t1", events=[])
@@ -83,6 +140,7 @@ class TestTraceLoader:
         trace = load_trace(FIXTURES_DIR / "sample_trace.json")
         assert trace.trace_id == "trace-001"
         assert len(trace.events) == 5
+        assert trace.schema_version == TRACE_SCHEMA
 
     def test_load_trace_event_types(self):
         trace = load_trace(FIXTURES_DIR / "sample_trace.json")
@@ -95,6 +153,75 @@ class TestTraceLoader:
         bad = tmp_path / "bad.json"
         bad.write_text("not json")
         with pytest.raises(Exception):
+            load_trace(bad)
+
+    def test_load_trace_v1_schema(self, tmp_path):
+        trace_path = tmp_path / "trace.json"
+        trace_path.write_text(
+            json.dumps(
+                {
+                    "schema": "cognigraph.trace.v1",
+                    "trace_id": "trace-v1",
+                    "session_id": "session-v1",
+                    "source": {"type": "internal-json", "name": "test"},
+                    "events": [
+                        {
+                            "id": "event-001",
+                            "timestamp": "2026-05-01T10:00:00Z",
+                            "source_ref": {
+                                "id": "planner_agent",
+                                "type": "Agent",
+                                "name": "planner",
+                            },
+                            "target_ref": {
+                                "id": "filesystem_tool",
+                                "type": "Tool",
+                                "name": "filesystem",
+                            },
+                            "edge_type": "INVOKED",
+                            "status": "ok",
+                            "duration_ms": 4,
+                            "origin": {
+                                "trace_id": "external-trace",
+                                "span_id": "external-span",
+                            },
+                            "evidence": {
+                                "operation": "tools/call",
+                                "tool_name": "filesystem_tool",
+                            },
+                            "attributes": {"adapter": "internal-json"},
+                        }
+                    ],
+                }
+            )
+        )
+        trace = load_trace(trace_path, trace_format="internal-json")
+        assert trace.trace_id == "trace-v1"
+        assert trace.session_id == "session-v1"
+        assert trace.events[0].source_id == "planner_agent"
+        assert trace.events[0].target_id == "filesystem_tool"
+        assert trace.events[0].origin["span_id"] == "external-span"
+
+    def test_available_trace_formats_include_internal_aliases(self):
+        formats = available_trace_formats()
+        assert "internal-json" in formats
+        assert "cognigraph-trace-v1" in formats
+        assert "json" in formats
+
+    def test_get_trace_adapter_rejects_unknown_format(self):
+        with pytest.raises(Exception, match="Unsupported trace format"):
+            get_trace_adapter("unknown-format")
+
+    def test_load_trace_internal_alias(self):
+        trace = load_trace(FIXTURES_DIR / "sample_trace.json", trace_format="json")
+        assert trace.trace_id == "trace-001"
+
+    def test_load_trace_rejects_wrong_schema(self, tmp_path):
+        bad = tmp_path / "bad.json"
+        bad.write_text(
+            json.dumps({"schema": "other.trace.v1", "trace_id": "t1", "events": []})
+        )
+        with pytest.raises(Exception, match="Invalid CogniGraph trace"):
             load_trace(bad)
 
     def test_load_trace_invalid_schema(self, tmp_path):
@@ -322,6 +449,23 @@ class TestCLIWithTrace:
         from cognigraph.cli import main
 
         rc = main([self.SAMPLE, "--trace", self.TRACE, "--quiet"])
+        out = capsys.readouterr().out
+        assert out == ""
+        assert rc == 2
+
+    def test_trace_format_flag(self, capsys):
+        from cognigraph.cli import main
+
+        rc = main(
+            [
+                self.SAMPLE,
+                "--trace",
+                self.TRACE,
+                "--trace-format",
+                "internal-json",
+                "--quiet",
+            ]
+        )
         out = capsys.readouterr().out
         assert out == ""
         assert rc == 2

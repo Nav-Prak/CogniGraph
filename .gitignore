@@ -6,6 +6,8 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
+.pytest-tmp/
 .coverage
 htmlcov/
+.codex-test-deps/
 .serena/

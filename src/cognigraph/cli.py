@@ -7,7 +7,7 @@ from cognigraph.fixture.loader import FixtureValidationError, load_fixture
 from cognigraph.graph.builder import build_from_fixture
 from cognigraph.report import export_html_report, findings_to_json, format_report
 from cognigraph.rules.engine import run_all_rules
-from cognigraph.trace.loader import load_trace
+from cognigraph.trace.loader import available_trace_formats, load_trace
 from cognigraph.trace.overlay import (
     apply_overlay,
     get_exercised_static_edges,
@@ -57,6 +57,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to JSON runtime trace file to overlay on the graph",
     )
     parser.add_argument(
+        "--trace-format",
+        choices=available_trace_formats(),
+        default="internal-json",
+        help="Trace adapter format to use with --trace",
+    )
+    parser.add_argument(
         "--annotations",
         type=Path,
         metavar="PATH",
@@ -83,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     overlay_result = None
     if args.trace:
         try:
-            trace = load_trace(args.trace)
+            trace = load_trace(args.trace, trace_format=args.trace_format)
         except Exception as e:
             print(f"Error loading trace: {e}", file=sys.stderr)
             return 1
