@@ -196,6 +196,151 @@ def _finding_nodes(findings: list[Finding]) -> set[str]:
     return nodes
 
 
+def _finding_focus_payload(findings: list[Finding]) -> dict[str, Any]:
+    payload = {"findings": []}
+    for index, finding in enumerate(findings, 1):
+        edges = [
+            [finding.path[path_index], finding.path[path_index + 1]]
+            for path_index in range(len(finding.path) - 1)
+        ]
+        payload["findings"].append(
+            {
+                "id": f"finding-{index}",
+                "label": f"Finding {index}: {finding.rule_id}",
+                "nodes": finding.path,
+                "edges": edges,
+            }
+        )
+    return payload
+
+
+def _json_script_data(element_id: str, payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload).replace("</", "<\\/")
+    return f'<script type="application/json" id="{_escape(element_id)}">{raw}</script>'
+
+
+def _graph_interaction_script() -> str:
+    return """
+    <script>
+      (function () {
+        var section = document.getElementById("graph-visualizer");
+        var dataElement = document.getElementById("graph-focus-data");
+        if (!section || !dataElement) {
+          return;
+        }
+
+        var payload = JSON.parse(dataElement.textContent || "{}");
+        var select = document.getElementById("graph-focus-select");
+        var labelToggle = document.getElementById("graph-label-toggle");
+        var nodes = Array.prototype.slice.call(section.querySelectorAll(".graph-node"));
+        var edges = Array.prototype.slice.call(section.querySelectorAll(".graph-edge"));
+        var labels = Array.prototype.slice.call(section.querySelectorAll(".graph-edge-label"));
+
+        function edgeKey(source, target) {
+          return source + "\\u0000" + target;
+        }
+
+        function setElementState(elements, activeSet, readKey) {
+          elements.forEach(function (element) {
+            var key = readKey(element);
+            var active = activeSet.has(key);
+            element.classList.toggle("is-active", active);
+            element.classList.toggle("is-dimmed", !active);
+          });
+        }
+
+        function clearFocus() {
+          nodes.forEach(function (node) {
+            node.classList.remove("is-active", "is-dimmed");
+          });
+          edges.forEach(function (edge) {
+            edge.classList.remove("is-active", "is-dimmed");
+          });
+          labels.forEach(function (label) {
+            label.classList.remove("is-active", "is-dimmed");
+          });
+        }
+
+        function applyFindingFocus(findingId) {
+          if (findingId === "all") {
+            clearFocus();
+            return;
+          }
+
+          var finding = (payload.findings || []).find(function (item) {
+            return item.id === findingId;
+          });
+          if (!finding) {
+            clearFocus();
+            return;
+          }
+
+          var activeNodes = new Set(finding.nodes || []);
+          var activeEdges = new Set((finding.edges || []).map(function (edge) {
+            return edgeKey(edge[0], edge[1]);
+          }));
+
+          setElementState(nodes, activeNodes, function (node) {
+            return node.getAttribute("data-node-id");
+          });
+          setElementState(edges, activeEdges, function (edge) {
+            return edgeKey(edge.getAttribute("data-source"), edge.getAttribute("data-target"));
+          });
+          setElementState(labels, activeEdges, function (label) {
+            return edgeKey(label.getAttribute("data-source"), label.getAttribute("data-target"));
+          });
+        }
+
+        function focusNodeNeighborhood(nodeId) {
+          var activeNodes = new Set([nodeId]);
+          var activeEdges = new Set();
+
+          edges.forEach(function (edge) {
+            var source = edge.getAttribute("data-source");
+            var target = edge.getAttribute("data-target");
+            if (source === nodeId || target === nodeId) {
+              activeNodes.add(source);
+              activeNodes.add(target);
+              activeEdges.add(edgeKey(source, target));
+            }
+          });
+
+          setElementState(nodes, activeNodes, function (node) {
+            return node.getAttribute("data-node-id");
+          });
+          setElementState(edges, activeEdges, function (edge) {
+            return edgeKey(edge.getAttribute("data-source"), edge.getAttribute("data-target"));
+          });
+          setElementState(labels, activeEdges, function (label) {
+            return edgeKey(label.getAttribute("data-source"), label.getAttribute("data-target"));
+          });
+        }
+
+        if (select) {
+          select.addEventListener("change", function () {
+            applyFindingFocus(select.value);
+          });
+        }
+
+        if (labelToggle) {
+          labelToggle.addEventListener("change", function () {
+            section.classList.toggle("hide-edge-labels", !labelToggle.checked);
+          });
+        }
+
+        nodes.forEach(function (node) {
+          node.addEventListener("click", function () {
+            if (select) {
+              select.value = "all";
+            }
+            focusNodeNeighborhood(node.getAttribute("data-node-id"));
+          });
+        });
+      })();
+    </script>
+    """
+
+
 def _node_visual_meta(data: dict[str, Any]) -> str:
     parts = []
     if "trust_level" in data:
@@ -288,14 +433,16 @@ def _graph_visualizer_html(graph: CogniGraph, findings: list[Finding]) -> str:
             classes.append("finding-edge")
         edge_label = _edge_type_label(data.get("runtime_edge_type", data.get("edge_type", "")))
         edge_items.append(
-            f'<path class="{" ".join(classes)}" d="{_escape(path)}" '
+            f'<path class="{" ".join(classes)}" data-source="{_escape(src)}" '
+            f'data-target="{_escape(tgt)}" d="{_escape(path)}" '
             f'marker-end="url(#arrowhead)">'
             f"<title>{_escape(src)} -[{_escape(edge_label)}]-> {_escape(tgt)}</title>"
             "</path>"
         )
         label_y = (start_y + end_y) / 2 - 7
         label_items.append(
-            f'<text class="graph-edge-label" x="{mid_x:.1f}" y="{label_y:.1f}">'
+            f'<text class="graph-edge-label" data-source="{_escape(src)}" '
+            f'data-target="{_escape(tgt)}" x="{mid_x:.1f}" y="{label_y:.1f}">'
             f"{_escape(_truncate(edge_label, 18))}</text>"
         )
 
@@ -334,6 +481,11 @@ def _graph_visualizer_html(graph: CogniGraph, findings: list[Finding]) -> str:
         for node_type, color in _GRAPH_NODE_COLORS.items()
         if any(data.get("node_type") == node_type for _, data in graph._graph.nodes(data=True))
     )
+    focus_options = "\n".join(
+        f'<option value="{_escape(f"finding-{index}")}">'
+        f'Finding {index}: {_escape(finding.rule_id)} {_escape(finding.title)}</option>'
+        for index, finding in enumerate(findings, 1)
+    )
 
     return f"""
     <section class="panel" id="graph-visualizer">
@@ -342,6 +494,17 @@ def _graph_visualizer_html(graph: CogniGraph, findings: list[Finding]) -> str:
           <p class="eyebrow">Graph Visualizer</p>
           <h2>Capability Map</h2>
         </div>
+      </div>
+      <div class="graph-toolbar">
+        <label for="graph-focus-select">Focus</label>
+        <select id="graph-focus-select">
+          <option value="all">All graph</option>
+          {focus_options}
+        </select>
+        <label class="graph-toggle" for="graph-label-toggle">
+          <input id="graph-label-toggle" type="checkbox" checked>
+          Edge labels
+        </label>
       </div>
       <div class="graph-legend">
         {legend_items}
@@ -681,6 +844,33 @@ def format_html_report(
       background: repeating-linear-gradient(90deg, var(--danger) 0 6px, transparent 6px 10px);
       height: 5px;
     }}
+    .graph-toolbar {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin: 0 0 12px;
+    }}
+    .graph-toolbar label {{
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .graph-toolbar select {{
+      min-width: min(360px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 9px;
+      color: var(--ink);
+      background: #ffffff;
+      font: inherit;
+      font-size: 14px;
+    }}
+    .graph-toggle {{
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+    }}
     .graph-edge {{
       fill: none;
       stroke: #98a2b3;
@@ -701,6 +891,13 @@ def format_html_report(
       stroke-width: 2.3;
       stroke-dasharray: 7 5;
     }}
+    .graph-edge.is-active {{
+      opacity: 1;
+      stroke-width: 4;
+    }}
+    .graph-edge.is-dimmed, .graph-node.is-dimmed, .graph-edge-label.is-dimmed {{
+      opacity: 0.18;
+    }}
     .graph-edge-label {{
       fill: var(--muted);
       font-size: 10px;
@@ -711,6 +908,7 @@ def format_html_report(
       stroke-width: 4px;
       stroke-linejoin: round;
     }}
+    .hide-edge-labels .graph-edge-label {{ display: none; }}
     #arrowhead path {{ fill: #98a2b3; }}
     .graph-node rect {{
       stroke: rgba(23, 32, 42, 0.18);
@@ -720,6 +918,10 @@ def format_html_report(
     .graph-node.finding-node rect {{
       stroke: var(--danger);
       stroke-width: 3;
+    }}
+    .graph-node.is-active rect {{
+      stroke: var(--ink);
+      stroke-width: 4;
     }}
     .graph-node text {{
       pointer-events: none;
@@ -898,6 +1100,8 @@ def format_html_report(
       </div>
     </section>
   </main>
+  {_json_script_data("graph-focus-data", _finding_focus_payload(findings))}
+  {_graph_interaction_script()}
 </body>
 </html>
 """

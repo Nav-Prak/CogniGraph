@@ -130,9 +130,15 @@ class TestFormatHtmlReport:
         assert '<svg class="graph-svg"' in html
         assert 'data-node-id="external_webpage"' in html
         assert 'data-node-id="SecretRead"' in html
+        assert 'id="graph-focus-select"' in html
+        assert 'id="graph-label-toggle"' in html
+        assert 'id="graph-focus-data"' in html
         assert "finding-edge" in html
+        assert 'data-source="external_webpage"' in html
+        assert 'data-target="planner_agent"' in html
         assert "CONSUMED_BY" in html
         assert "CAN_INVOKE" in html
+        assert "applyFindingFocus" in html
 
     def test_escapes_finding_content(self, sample_graph):
         finding = _make_finding(
