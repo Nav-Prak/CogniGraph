@@ -69,6 +69,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to YAML tool capability annotations to apply to the fixture",
     )
     parser.add_argument(
+        "--infer-capabilities",
+        action="store_true",
+        help=(
+            "Apply deterministic keyword heuristics to tool IDs/descriptions. "
+            "Only capabilities already declared in the fixture can be added."
+        ),
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress the text report on stdout",
@@ -76,7 +84,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        config = load_fixture(args.fixture, annotations_path=args.annotations)
+        config = load_fixture(
+            args.fixture,
+            annotations_path=args.annotations,
+            infer_capabilities=args.infer_capabilities,
+        )
     except FixtureValidationError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

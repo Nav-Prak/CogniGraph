@@ -2,6 +2,7 @@ from pathlib import Path
 
 import yaml
 
+from cognigraph.fixture.heuristics import apply_heuristic_capability_mapping
 from cognigraph.fixture.models import FixtureConfig, ToolAnnotationsConfig
 
 
@@ -23,13 +24,20 @@ def load_tool_annotations(path: Path) -> ToolAnnotationsConfig:
     return ToolAnnotationsConfig(**_load_yaml(path))
 
 
-def load_fixture(path: Path, annotations_path: Path | None = None) -> FixtureConfig:
+def load_fixture(
+    path: Path,
+    annotations_path: Path | None = None,
+    infer_capabilities: bool = False,
+) -> FixtureConfig:
     raw = _load_yaml(path)
     config = FixtureConfig(**raw)
     validate_references(config)
     if annotations_path is not None:
         annotations = load_tool_annotations(annotations_path)
         config = apply_tool_annotations(config, annotations)
+    if infer_capabilities:
+        config = apply_heuristic_capability_mapping(config)
+        validate_references(config)
     return config
 
 

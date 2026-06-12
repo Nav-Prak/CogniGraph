@@ -60,6 +60,11 @@ class TestCLI:
         rc = main([fixture, "--annotations", annotations, "--quiet"])
         assert rc == 2
 
+    def test_infer_capabilities_flag(self):
+        fixture = str(EXAMPLES_DIR / "rag_mcp_unannotated.yaml")
+        rc = main([fixture, "--infer-capabilities", "--quiet"])
+        assert rc == 2
+
     def test_bad_fixture_returns_1(self, tmp_path):
         bad = tmp_path / "bad.yaml"
         bad.write_text("agents:\n  - id: a\n    trust_level: 99\n")

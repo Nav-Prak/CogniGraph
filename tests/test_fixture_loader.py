@@ -1,6 +1,10 @@
 import pytest
 from pydantic import ValidationError
 
+from cognigraph.fixture.heuristics import (
+    apply_heuristic_capability_mapping,
+    infer_capabilities_for_tool,
+)
 from cognigraph.fixture.loader import (
     FixtureValidationError,
     apply_tool_annotations,
@@ -225,6 +229,26 @@ tool_capability_annotations:
         config = load_fixture(fixture, annotations_path=annotations)
         assert config.tools[0].capabilities == ["SecretRead"]
 
+    def test_load_with_heuristic_capability_mapping(self, tmp_path):
+        fixture = tmp_path / "fixture.yaml"
+        fixture.write_text(
+            """
+tools:
+  - id: fs_tool
+    description: Read files and secrets from disk.
+
+capabilities:
+  - id: SecretRead
+    severity: 4
+  - id: FilesystemRead
+    severity: 3
+""",
+            encoding="utf-8",
+        )
+
+        config = load_fixture(fixture, infer_capabilities=True)
+        assert config.tools[0].capabilities == ["SecretRead", "FilesystemRead"]
+
     def test_load_annotations_bad_yaml_shape(self, tmp_path):
         annotations = tmp_path / "annotations.yaml"
         annotations.write_text("- not-a-mapping\n", encoding="utf-8")
@@ -276,6 +300,47 @@ class TestToolAnnotations:
         )
         with pytest.raises(FixtureValidationError, match="unknown capability"):
             apply_tool_annotations(config, annotations)
+
+
+class TestHeuristicCapabilityMapping:
+    def test_infers_from_tool_description(self):
+        tool = ToolConfig(
+            id="fs_tool",
+            description="Read files and secrets from disk.",
+        )
+        inferred = infer_capabilities_for_tool(
+            tool,
+            {"SecretRead", "FilesystemRead", "ShellExecution"},
+        )
+        assert inferred == ["SecretRead", "FilesystemRead"]
+
+    def test_does_not_infer_undeclared_capabilities(self):
+        tool = ToolConfig(
+            id="shell_runner",
+            description="Execute command in a shell.",
+        )
+        inferred = infer_capabilities_for_tool(tool, {"SecretRead"})
+        assert inferred == []
+
+    def test_apply_heuristics_merges_with_existing_capabilities(self):
+        config = FixtureConfig(
+            tools=[
+                ToolConfig(
+                    id="github_tool",
+                    description="Push commits to GitHub.",
+                    capabilities=["ExternalNetworkSend"],
+                )
+            ],
+            capabilities=[
+                CapabilityConfig(id="ExternalNetworkSend", severity=3),
+                CapabilityConfig(id="GitHubPush", severity=4),
+            ],
+        )
+        updated = apply_heuristic_capability_mapping(config)
+        assert updated.tools[0].capabilities == [
+            "ExternalNetworkSend",
+            "GitHubPush",
+        ]
 
 
 class TestValidateReferences:
