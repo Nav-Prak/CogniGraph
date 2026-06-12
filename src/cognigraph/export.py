@@ -14,6 +14,7 @@ _NODE_SHAPES: dict[NodeType, str] = {
     NodeType.CAPABILITY: "diamond",
     NodeType.RESOURCE: "folder",
     NodeType.EXECUTION_ENVIRONMENT: "house",
+    NodeType.POLICY: "octagon",
 }
 
 _NODE_COLORS: dict[NodeType, str] = {
@@ -24,6 +25,7 @@ _NODE_COLORS: dict[NodeType, str] = {
     NodeType.CAPABILITY: "#e63946",
     NodeType.RESOURCE: "#457b9d",
     NodeType.EXECUTION_ENVIRONMENT: "#a8dadc",
+    NodeType.POLICY: "#588157",
 }
 
 

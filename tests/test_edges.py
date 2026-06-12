@@ -12,8 +12,17 @@ from cognigraph.schemas.enums import EdgeType, NodeType
 
 
 class TestAllowedRelationships:
-    def test_has_eight_entries(self):
-        assert len(ALLOWED_RELATIONSHIPS) == 8
+    def test_has_nine_entries(self):
+        assert len(ALLOWED_RELATIONSHIPS) == 9
+
+    def test_policy_applies_to_targets(self):
+        targets = ALLOWED_RELATIONSHIPS[(NodeType.POLICY, EdgeType.APPLIES_TO)]
+        assert targets == {NodeType.AGENT, NodeType.TOOL, NodeType.MCP_SERVER}
+
+    def test_policy_cannot_apply_to_capability(self):
+        assert not validate_edge_types(
+            NodeType.POLICY, EdgeType.APPLIES_TO, NodeType.CAPABILITY
+        )
 
     def test_context_source_consumed_by_agent(self):
         assert validate_edge_types(

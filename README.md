@@ -349,6 +349,7 @@ The mapper only adds capabilities already declared in the fixture. It does not c
 | MCPServer | MCP server backing one or more tools | |
 | Capability | Privileged action (shell exec, secret read, network send) | `severity` (1-4) |
 | Resource | Target object (SSH key, database, repository) | `sensitivity` (1-4) |
+| Policy | Approval/control boundary applied to agents, tools, or servers | `effect` (mitigate/downgrade) |
 
 ### Trust Levels
 
@@ -381,6 +382,23 @@ policy:
 
 Both the in-memory engine and the Neo4j Cypher rules honor the policy block.
 
+### Approval Boundaries (Policies)
+
+Approval gates, human-in-the-loop reviews, and similar controls are modeled as `Policy` nodes applied to agents, tools, or MCP servers — so the analyzer can see its own recommended remediations:
+
+```yaml
+policies:
+  - id: fs_approval
+    applies_to: [filesystem_tool]      # agents, tools, or MCP servers
+    effect: mitigate                   # mitigate (default) | downgrade
+    description: Human approval required before filesystem access
+```
+
+- `effect: mitigate` — findings whose risk is fully gated are reported under "Mitigated by Policy" and excluded from the exit code, like accepted risks.
+- `effect: downgrade` — findings stay active but drop one severity level (useful with `--fail-on`).
+
+Mitigation is sound, not path-cosmetic: a capability only counts as gated when **every** reachable tool exposing it is covered by a policy (or the agent itself is gated). One unprotected alternative path keeps the finding group active. A policy on an MCP server extends to all tools it backs.
+
 ### Relationships
 
 Edges are derived from the fixture's `consumes`, `can_invoke`, `capabilities`, `mcp_server`, and `capability_bindings` fields:
@@ -392,6 +410,7 @@ Tool          -[CAN_INVOKE]->  Tool
 Tool          -[EXPOSES_CAPABILITY]-> Capability
 Capability    -[CAN_ACCESS_RESOURCE]-> Resource
 Tool          -[USES_SERVER]-> MCPServer
+Policy        -[APPLIES_TO]-> Agent | Tool | MCPServer
 ```
 
 ## Detection Rules

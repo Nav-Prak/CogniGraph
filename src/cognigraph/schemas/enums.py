@@ -34,6 +34,7 @@ class EdgeType(str, Enum):
     CAN_ACCESS_RESOURCE = "CAN_ACCESS_RESOURCE"
     RUNS_IN = "RUNS_IN"
     USES_SERVER = "USES_SERVER"
+    APPLIES_TO = "APPLIES_TO"
 
 
 class RuntimeEdgeType(str, Enum):
@@ -53,3 +54,9 @@ class NodeType(str, Enum):
     CAPABILITY = "Capability"
     RESOURCE = "Resource"
     EXECUTION_ENVIRONMENT = "ExecutionEnvironment"
+    POLICY = "Policy"
+
+
+class PolicyEffect(str, Enum):
+    MITIGATE = "mitigate"
+    DOWNGRADE = "downgrade"

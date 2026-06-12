@@ -156,4 +156,12 @@ def build_from_fixture(config: FixtureConfig) -> CogniGraph:
             binding.capability, binding.resource, EdgeType.CAN_ACCESS_RESOURCE
         )
 
+    for policy in config.policies:
+        graph.add_node(
+            policy.id, NodeType.POLICY,
+            effect=policy.effect.value, description=policy.description,
+        )
+        for target_id in policy.applies_to:
+            graph.add_edge(policy.id, target_id, EdgeType.APPLIES_TO)
+
     return graph

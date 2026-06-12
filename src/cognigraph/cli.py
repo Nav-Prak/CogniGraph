@@ -26,6 +26,7 @@ from cognigraph.rules.grouping import (
     group_findings,
     load_suppressions,
 )
+from cognigraph.rules.mitigation import apply_policy_mitigations
 from cognigraph.schemas.findings import FindingSeverity
 from cognigraph.trace.loader import available_trace_formats, load_trace
 from cognigraph.trace.overlay import (
@@ -217,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         overlay_result = apply_overlay(graph, trace)
 
     findings = run_all_rules(graph, config.analysis, config.policy)
+    findings = apply_policy_mitigations(graph, config, findings)
 
     groups = group_findings(findings)
     if args.suppressions:

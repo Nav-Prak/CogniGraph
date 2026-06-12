@@ -44,6 +44,11 @@ def group_findings(findings: list[Finding]) -> list[FindingGroup]:
             target=target,
             severity=max(f.severity for f in members),
             findings=members,
+            # A group is mitigated only when every path to the target
+            # crosses a policy boundary; one unprotected path keeps it live.
+            mitigated_by=members[0].mitigated_by
+            if all(f.mitigated_by for f in members)
+            else None,
         )
         for (rule_id, target), members in grouped.items()
     ]
@@ -109,8 +114,12 @@ def apply_suppressions(
 
 
 def active_groups(groups: list[FindingGroup]) -> list[FindingGroup]:
-    return [g for g in groups if not g.suppressed]
+    return [g for g in groups if not g.suppressed and not g.mitigated_by]
 
 
 def suppressed_groups(groups: list[FindingGroup]) -> list[FindingGroup]:
     return [g for g in groups if g.suppressed]
+
+
+def mitigated_groups(groups: list[FindingGroup]) -> list[FindingGroup]:
+    return [g for g in groups if g.mitigated_by and not g.suppressed]

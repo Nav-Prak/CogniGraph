@@ -11,6 +11,11 @@ ALLOWED_RELATIONSHIPS: dict[tuple[NodeType, EdgeType], set[NodeType]] = {
     (NodeType.TOOL, EdgeType.USES_SERVER): {NodeType.MCP_SERVER},
     (NodeType.AGENT, EdgeType.RUNS_IN): {NodeType.EXECUTION_ENVIRONMENT},
     (NodeType.TOOL, EdgeType.RUNS_IN): {NodeType.EXECUTION_ENVIRONMENT},
+    (NodeType.POLICY, EdgeType.APPLIES_TO): {
+        NodeType.AGENT,
+        NodeType.TOOL,
+        NodeType.MCP_SERVER,
+    },
 }
 
 INVALID_RELATIONSHIPS: set[tuple[NodeType, NodeType]] = {

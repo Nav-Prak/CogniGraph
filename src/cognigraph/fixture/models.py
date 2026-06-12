@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, model_validator
 
-from cognigraph.schemas.enums import ResourceType, SourceType
+from cognigraph.schemas.enums import PolicyEffect, ResourceType, SourceType
 
 DEFAULT_DANGEROUS_PAIRS: tuple[tuple[str, str], ...] = (
     ("SecretRead", "ExternalNetworkSend"),
@@ -101,6 +101,20 @@ class CapabilityBinding(BaseModel, frozen=True):
     resource: str
 
 
+class PolicyNodeConfig(BaseModel, frozen=True):
+    """An approval/control boundary applied to agents, tools, or MCP servers.
+
+    Findings whose path crosses a protected node are mitigated (treated like
+    an accepted risk, default) or downgraded one severity level, depending on
+    `effect`.
+    """
+
+    id: str
+    applies_to: list[str] = Field(min_length=1)
+    effect: PolicyEffect = PolicyEffect.MITIGATE
+    description: str | None = None
+
+
 class FixtureConfig(BaseModel, frozen=True):
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
@@ -111,3 +125,4 @@ class FixtureConfig(BaseModel, frozen=True):
     capabilities: list[CapabilityConfig] = Field(default_factory=list)
     resources: list[ResourceConfig] = Field(default_factory=list)
     capability_bindings: list[CapabilityBinding] = Field(default_factory=list)
+    policies: list[PolicyNodeConfig] = Field(default_factory=list)

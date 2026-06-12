@@ -50,7 +50,7 @@ class TestEdgeType:
     def test_all_values(self):
         expected = {
             "CONSUMED_BY", "CAN_INVOKE", "EXPOSES_CAPABILITY",
-            "CAN_ACCESS_RESOURCE", "RUNS_IN", "USES_SERVER",
+            "CAN_ACCESS_RESOURCE", "RUNS_IN", "USES_SERVER", "APPLIES_TO",
         }
         assert {e.value for e in EdgeType} == expected
 
@@ -59,9 +59,9 @@ class TestNodeType:
     def test_all_values(self):
         expected = {
             "Agent", "Tool", "MCPServer", "ContextSource",
-            "Capability", "Resource", "ExecutionEnvironment",
+            "Capability", "Resource", "ExecutionEnvironment", "Policy",
         }
         assert {n.value for n in NodeType} == expected
 
     def test_count(self):
-        assert len(NodeType) == 7
+        assert len(NodeType) == 8

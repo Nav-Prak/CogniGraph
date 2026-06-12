@@ -20,6 +20,7 @@ class Finding(BaseModel, frozen=True):
     path: list[str]
     entities: dict[str, str]
     recommended_control: str
+    mitigated_by: str | None = None
 
 
 class FindingGroup(BaseModel, frozen=True):
@@ -30,6 +31,7 @@ class FindingGroup(BaseModel, frozen=True):
     findings: list[Finding]
     suppressed: bool = False
     suppression_reason: str | None = None
+    mitigated_by: str | None = None
 
 
 class Suppression(BaseModel, frozen=True):

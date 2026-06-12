@@ -26,6 +26,7 @@ _GRAPH_NODE_TYPE_ORDER: tuple[NodeType, ...] = (
     NodeType.RESOURCE,
     NodeType.MCP_SERVER,
     NodeType.EXECUTION_ENVIRONMENT,
+    NodeType.POLICY,
 )
 
 _GRAPH_NODE_COLORS: dict[NodeType, str] = {
@@ -36,6 +37,7 @@ _GRAPH_NODE_COLORS: dict[NodeType, str] = {
     NodeType.RESOURCE: "#7a5c00",
     NodeType.MCP_SERVER: "#6f3fa0",
     NodeType.EXECUTION_ENVIRONMENT: "#3f6b57",
+    NodeType.POLICY: "#588157",
 }
 
 
@@ -87,13 +89,19 @@ def findings_to_json(findings: list[Finding]) -> str:
 
 
 def format_group_summary(groups: list[FindingGroup]) -> str:
-    active = [g for g in groups if not g.suppressed]
+    active = [g for g in groups if not g.suppressed and not g.mitigated_by]
     suppressed = [g for g in groups if g.suppressed]
+    mitigated = [g for g in groups if g.mitigated_by and not g.suppressed]
 
+    inactive_notes = []
+    if suppressed:
+        inactive_notes.append(f"suppressed: {len(suppressed)}")
+    if mitigated:
+        inactive_notes.append(f"mitigated: {len(mitigated)}")
     lines = [
         "--- Finding Groups ---",
         f"Active groups: {len(active)}"
-        + (f" (suppressed: {len(suppressed)})" if suppressed else ""),
+        + (f" ({', '.join(inactive_notes)})" if inactive_notes else ""),
     ]
     for group in active:
         severity = _SEVERITY_LABELS.get(group.severity, "UNKNOWN")
@@ -101,6 +109,14 @@ def format_group_summary(groups: list[FindingGroup]) -> str:
             f"  [{group.rule_id}] [{severity}] {group.target} "
             f"({len(group.findings)} path(s))"
         )
+    if mitigated:
+        lines.append("")
+        lines.append("--- Mitigated by Policy ---")
+        for group in mitigated:
+            lines.append(
+                f"  [{group.rule_id}] {group.target} "
+                f"({len(group.findings)} path(s)): policy '{group.mitigated_by}'"
+            )
     if suppressed:
         lines.append("")
         lines.append("--- Accepted Risks (suppressed) ---")

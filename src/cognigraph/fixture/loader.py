@@ -92,6 +92,8 @@ def _collect_ids(config: FixtureConfig) -> dict[str, list[str]]:
         id_to_types.setdefault(c.id, []).append("capability")
     for r in config.resources:
         id_to_types.setdefault(r.id, []).append("resource")
+    for p in config.policies:
+        id_to_types.setdefault(p.id, []).append("policy")
     return id_to_types
 
 
@@ -148,6 +150,16 @@ def validate_references(config: FixtureConfig) -> None:
             errors.append(
                 f"Capability binding references unknown resource '{binding.resource}'"
             )
+
+    agent_ids = {a.id for a in config.agents}
+    policy_target_ids = agent_ids | tool_ids | mcp_server_ids
+    for policy in config.policies:
+        for target_id in policy.applies_to:
+            if target_id not in policy_target_ids:
+                errors.append(
+                    f"Policy '{policy.id}' applies to unknown agent, tool, "
+                    f"or MCP server '{target_id}'"
+                )
 
     bound_capability_ids = {
         binding.capability
