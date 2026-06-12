@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run pytest --cov=cognigraph
+
+  reachability-gate:
+    # The CI gate this repo also ships as a template: fail the build when a
+    # config change opens a dangerous path in a guarded fixture.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+
+      - name: Guarded fixture must stay free of dangerous paths
+        run: uv run cognigraph examples/least_privilege_safe.yaml --fail-on any
+
+      - name: Collected demo fixture must stay clean before annotation
+        run: |
+          uv run cognigraph collect fixtures/sample_mcp_config.json -o collected.yaml
+          uv run cognigraph collected.yaml --fail-on any
+
+      - name: Vulnerable demo must keep detecting (engine regression guard)
+        run: |
+          set +e
+          uv run cognigraph examples/rag_mcp_vulnerable.yaml --quiet --fail-on critical
+          code=$?
+          set -e
+          test "$code" -eq 2

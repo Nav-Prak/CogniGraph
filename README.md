@@ -99,6 +99,36 @@ Exit codes: `0` = no findings, `1` = error, `2` = findings detected.
 
 Structured JSON findings include the rule ID, severity, path, entities, and deterministic `recommended_control` guidance.
 
+### Finding Groups, Suppressions, and CI Gating
+
+Findings are grouped by (rule, target) — e.g. all paths by which low-trust context reaches `SecretRead` form one group, with the individual paths kept as evidence. The text report prints the group summary after the per-path findings.
+
+Reviewed, accepted risks can be suppressed:
+
+```yaml
+# suppressions.yaml
+suppressions:
+  - rule_id: R001
+    target: SecretRead
+    reason: "Vault reads are gated by human approval (ticket SEC-142)"
+    expires: 2026-12-31   # optional; an expired entry is an error
+```
+
+```bash
+uv run cognigraph my_system.yaml --suppressions suppressions.yaml
+```
+
+Suppressed groups are reported under "Accepted Risks" and excluded from the exit-code decision. A suppression that matches no finding group, or has expired, fails with exit `1` — stale entries are treated as drift, not noise.
+
+`--fail-on {critical,high,any}` (default `any`) sets the minimum active group severity that causes exit `2`, which makes the analyzer usable as a CI gate:
+
+```bash
+# Fail the build only on critical, unsuppressed findings
+uv run cognigraph my_system.yaml --suppressions suppressions.yaml --fail-on critical
+```
+
+This repo's own [CI workflow](.github/workflows/ci.yml) doubles as a template: it keeps a guarded fixture free of dangerous paths and verifies the vulnerable demo still detects.
+
 ## Runtime Trace Overlay Preview
 
 CogniGraph has a small internal JSON trace format for runtime overlays. This is a preview feature, not a core MVP requirement. External trace systems should map into this format through adapters so the graph, rules, and report code can consume one stable representation.

@@ -12,8 +12,21 @@ from cognigraph.collect.mcp_config import (
 from cognigraph.export import export_dot, export_json
 from cognigraph.fixture.loader import FixtureValidationError, load_fixture
 from cognigraph.graph.builder import build_from_fixture
-from cognigraph.report import export_html_report, findings_to_json, format_report
+from cognigraph.report import (
+    export_html_report,
+    findings_to_json,
+    format_group_summary,
+    format_report,
+)
 from cognigraph.rules.engine import run_all_rules
+from cognigraph.rules.grouping import (
+    SuppressionError,
+    active_groups,
+    apply_suppressions,
+    group_findings,
+    load_suppressions,
+)
+from cognigraph.schemas.findings import FindingSeverity
 from cognigraph.trace.loader import available_trace_formats, load_trace
 from cognigraph.trace.overlay import (
     apply_overlay,
@@ -155,6 +168,24 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--suppressions",
+        type=Path,
+        metavar="PATH",
+        help=(
+            "Path to YAML suppressions file; suppressed finding groups are "
+            "reported as accepted risks and excluded from the exit code"
+        ),
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=["critical", "high", "any"],
+        default="any",
+        help=(
+            "Minimum active finding-group severity that causes exit code 2 "
+            "(default: any)"
+        ),
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress the text report on stdout",
@@ -187,8 +218,19 @@ def main(argv: list[str] | None = None) -> int:
 
     findings = run_all_rules(graph, config.analysis, config.policy)
 
+    groups = group_findings(findings)
+    if args.suppressions:
+        try:
+            suppressions = load_suppressions(args.suppressions)
+            groups = apply_suppressions(groups, suppressions)
+        except SuppressionError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
     if not args.quiet:
         print(format_report(findings))
+        if groups:
+            print(format_group_summary(groups))
         if overlay_result:
             print("\n--- Runtime Overlay Summary ---")
             print(f"Observed edges: {overlay_result.observed_count}")
@@ -228,7 +270,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"HTML report exported to {args.html_report}", file=sys.stderr)
 
-    return 0 if not findings else 2
+    fail_threshold = {
+        "any": FindingSeverity.INFO,
+        "high": FindingSeverity.HIGH,
+        "critical": FindingSeverity.CRITICAL,
+    }[args.fail_on]
+    failing = [g for g in active_groups(groups) if g.severity >= fail_threshold]
+    return 2 if failing else 0
 
 
 if __name__ == "__main__":

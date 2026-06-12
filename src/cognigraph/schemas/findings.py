@@ -1,3 +1,4 @@
+from datetime import date
 from enum import IntEnum
 
 from pydantic import BaseModel
@@ -19,3 +20,20 @@ class Finding(BaseModel, frozen=True):
     path: list[str]
     entities: dict[str, str]
     recommended_control: str
+
+
+class FindingGroup(BaseModel, frozen=True):
+    rule_id: str
+    title: str
+    target: str
+    severity: FindingSeverity
+    findings: list[Finding]
+    suppressed: bool = False
+    suppression_reason: str | None = None
+
+
+class Suppression(BaseModel, frozen=True):
+    rule_id: str
+    target: str
+    reason: str
+    expires: date | None = None

@@ -25,7 +25,7 @@ There is no linter/formatter configured.
 
 Coverage intentionally omits `src/cognigraph/neo4j/*` (optional adapter requiring a running container); the 95% gate applies to the core in-memory path.
 
-CLI exit codes: `0` = no findings, `1` = error, `2` = findings detected. Tests assert on these.
+CLI exit codes: `0` = no findings, `1` = error, `2` = findings detected (more precisely: active finding groups at/above `--fail-on`, after suppressions). Tests assert on these.
 
 ## Architecture
 
@@ -41,7 +41,7 @@ YAML fixture → fixture/loader.load_fixture → graph/builder.build_from_fixtur
 
 3. **`schemas/`** — the single source of truth for the domain model: `enums.py` (NodeType, EdgeType, trust levels), `edges.py` (`ALLOWED_RELATIONSHIPS` — the (source type, edge type) → allowed target types table that gates all edge creation), `nodes.py`, `findings.py` (the `Finding` model with rule_id, severity, path, entities, recommended_control).
 
-4. **`rules/engine.py`** — five detection rules R001–R005, each a standalone function returning `list[Finding]`; `run_all_rules` aggregates. Reachability is BFS over `CAN_INVOKE` edges bounded by `analysis.max_tool_invocation_depth` and `max_path_length` from the fixture. `DANGEROUS_PAIRS` and `RECOMMENDED_CONTROLS` are module-level constants here.
+4. **`rules/engine.py`** — five detection rules R001–R005, each a standalone function returning `list[Finding]`; `run_all_rules` aggregates. Reachability is BFS over `CAN_INVOKE` edges bounded by `analysis.max_tool_invocation_depth` and `max_path_length` from the fixture. Thresholds and dangerous pairs come from the fixture's optional `policy` block (`PolicyConfig` in `fixture/models.py`; defaults preserve legacy behavior). `rules/grouping.py` post-processes findings into per-(rule, target) groups and applies the `--suppressions` file; the CLI exit code is decided by active groups vs `--fail-on`, never by raw findings.
 
 5. **`neo4j/`** — optional adapter. **`neo4j/queries.py` mirrors all five rules in Cypher and must produce identical findings to the in-memory engine** — changing a rule means changing it in both places. `tests/conftest.py` skips Neo4j tests when the container isn't reachable.
 

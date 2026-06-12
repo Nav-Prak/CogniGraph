@@ -8,7 +8,7 @@ from typing import Any
 
 from cognigraph.graph.builder import CogniGraph
 from cognigraph.schemas.enums import EdgeType, NodeType, RuntimeEdgeType
-from cognigraph.schemas.findings import Finding, FindingSeverity
+from cognigraph.schemas.findings import Finding, FindingGroup, FindingSeverity
 
 _SEVERITY_LABELS: dict[FindingSeverity, str] = {
     FindingSeverity.INFO: "INFO",
@@ -84,6 +84,32 @@ def findings_to_json(findings: list[Finding]) -> str:
         [_finding_to_json_dict(f) for f in findings],
         indent=2,
     )
+
+
+def format_group_summary(groups: list[FindingGroup]) -> str:
+    active = [g for g in groups if not g.suppressed]
+    suppressed = [g for g in groups if g.suppressed]
+
+    lines = [
+        "--- Finding Groups ---",
+        f"Active groups: {len(active)}"
+        + (f" (suppressed: {len(suppressed)})" if suppressed else ""),
+    ]
+    for group in active:
+        severity = _SEVERITY_LABELS.get(group.severity, "UNKNOWN")
+        lines.append(
+            f"  [{group.rule_id}] [{severity}] {group.target} "
+            f"({len(group.findings)} path(s))"
+        )
+    if suppressed:
+        lines.append("")
+        lines.append("--- Accepted Risks (suppressed) ---")
+        for group in suppressed:
+            lines.append(
+                f"  [{group.rule_id}] {group.target} "
+                f"({len(group.findings)} path(s)): {group.suppression_reason}"
+            )
+    return "\n".join(lines)
 
 
 _RULE_EXPLANATIONS: dict[str, str] = {
