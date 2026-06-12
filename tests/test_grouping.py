@@ -16,6 +16,7 @@ from cognigraph.rules.grouping import (
     group_findings,
     group_target,
     load_suppressions,
+    rank_groups,
     suppressed_groups,
 )
 from cognigraph.schemas.findings import Finding, FindingSeverity, Suppression
@@ -91,6 +92,94 @@ class TestGrouping:
     def test_groups_sorted(self):
         groups = group_findings(vulnerable_findings())
         assert groups == sorted(groups, key=lambda g: (g.rule_id, g.target))
+
+
+class TestRanking:
+    def make(self, rule_id, capability, severity, path):
+        return Finding(
+            rule_id=rule_id,
+            title="t",
+            description="d",
+            severity=severity,
+            path=path,
+            entities={"capability": capability},
+            recommended_control="c",
+        )
+
+    def test_severity_outranks_path_length(self):
+        groups = group_findings(
+            [
+                self.make("R001", "LongCritical", FindingSeverity.CRITICAL,
+                          ["a", "b", "c", "d", "e"]),
+                self.make("R001", "ShortHigh", FindingSeverity.HIGH, ["a", "b"]),
+            ]
+        )
+        ranked = rank_groups(groups)
+        assert [g.target for g in ranked] == ["LongCritical", "ShortHigh"]
+
+    def test_shorter_path_ranks_first_within_severity(self):
+        groups = group_findings(
+            [
+                self.make("R001", "Long", FindingSeverity.HIGH,
+                          ["a", "b", "c", "d"]),
+                self.make("R001", "Short", FindingSeverity.HIGH, ["a", "b"]),
+            ]
+        )
+        ranked = rank_groups(groups)
+        assert [g.target for g in ranked] == ["Short", "Long"]
+
+    def test_lower_source_trust_ranks_first_with_graph(self):
+        from cognigraph.fixture.models import FixtureConfig
+
+        config = FixtureConfig(
+            **{
+                "context_sources": [
+                    {"id": "web", "source_type": "webpage", "trust_level": 0},
+                    {"id": "memory", "source_type": "memory", "trust_level": 2},
+                ],
+                "agents": [
+                    {"id": "agent", "trust_level": 2,
+                     "consumes": ["web", "memory"], "can_invoke": []}
+                ],
+            }
+        )
+        graph = build_from_fixture(config)
+        findings = [
+            Finding(
+                rule_id="R001", title="t", description="d",
+                severity=FindingSeverity.HIGH, path=["a", "b"],
+                entities={"capability": "ViaMemory",
+                          "context_source": "memory"},
+                recommended_control="c",
+            ),
+            Finding(
+                rule_id="R001", title="t", description="d",
+                severity=FindingSeverity.HIGH, path=["a", "b"],
+                entities={"capability": "ViaWeb", "context_source": "web"},
+                recommended_control="c",
+            ),
+        ]
+        ranked = rank_groups(group_findings(findings), graph)
+        assert [g.target for g in ranked] == ["ViaWeb", "ViaMemory"]
+
+    def test_unknown_source_node_is_neutral(self):
+        config = load_fixture(VULNERABLE)
+        graph = build_from_fixture(config)
+        finding = Finding(
+            rule_id="R001", title="t", description="d",
+            severity=FindingSeverity.HIGH, path=["a", "b"],
+            entities={"capability": "X", "context_source": "ghost"},
+            recommended_control="c",
+        )
+        ranked = rank_groups(group_findings([finding]), graph)
+        assert len(ranked) == 1
+
+    def test_vulnerable_demo_ranked_critical_first(self):
+        config = load_fixture(VULNERABLE)
+        graph = build_from_fixture(config)
+        ranked = rank_groups(group_findings(vulnerable_findings()), graph)
+        severities = [g.severity for g in ranked]
+        assert severities == sorted(severities, reverse=True)
 
 
 class TestSuppressions:
@@ -257,6 +346,73 @@ class TestCLISuppressions:
         text = format_group_summary(groups)
         assert "Active groups:" in text
         assert "path(s)" in text
+
+
+class TestHtmlGroupPanel:
+    def test_html_report_includes_group_panel(self, tmp_path, capsys):
+        report_path = tmp_path / "report.html"
+        rc = main([str(VULNERABLE), "--quiet", "--html-report", str(report_path)])
+        assert rc == 2
+        content = report_path.read_text(encoding="utf-8")
+        assert "Finding Groups" in content
+        assert 'group-badge active' in content
+
+    def test_html_report_shows_suppressed_badge(self, tmp_path, capsys):
+        sup = write_full_suppressions(tmp_path)
+        report_path = tmp_path / "report.html"
+        rc = main(
+            [
+                str(VULNERABLE),
+                "--quiet",
+                "--suppressions",
+                str(sup),
+                "--html-report",
+                str(report_path),
+            ]
+        )
+        assert rc == 0
+        content = report_path.read_text(encoding="utf-8")
+        assert 'group-badge suppressed' in content
+        assert "accepted for test" in content
+        assert 'group-badge active' not in content
+
+    def test_html_report_shows_mitigated_badge(self, tmp_path, capsys):
+        import yaml as yaml_mod
+
+        fixture = {
+            "context_sources": [
+                {"id": "web", "source_type": "webpage", "trust_level": 0}
+            ],
+            "agents": [
+                {
+                    "id": "agent",
+                    "trust_level": 2,
+                    "consumes": ["web"],
+                    "can_invoke": ["tool_a"],
+                }
+            ],
+            "tools": [{"id": "tool_a", "capabilities": ["CapA"]}],
+            "capabilities": [{"id": "CapA", "severity": 4}],
+            "policies": [{"id": "gate", "applies_to": ["tool_a"]}],
+        }
+        fixture_path = tmp_path / "f.yaml"
+        fixture_path.write_text(yaml_mod.safe_dump(fixture), encoding="utf-8")
+        report_path = tmp_path / "report.html"
+        rc = main(
+            [str(fixture_path), "--quiet", "--html-report", str(report_path)]
+        )
+        assert rc == 0
+        content = report_path.read_text(encoding="utf-8")
+        assert 'group-badge mitigated' in content
+        assert "policy &#x27;gate&#x27;" in content
+
+    def test_html_report_without_groups_param_unchanged(self):
+        from cognigraph.report import format_html_report
+
+        config = load_fixture(VULNERABLE)
+        graph = build_from_fixture(config)
+        html = format_html_report(graph, [])
+        assert "Finding Groups" not in html
 
 
 class TestFailOn:

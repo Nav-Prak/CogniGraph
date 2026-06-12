@@ -29,6 +29,7 @@ from cognigraph.rules.grouping import (
     apply_suppressions,
     group_findings,
     load_suppressions,
+    rank_groups,
 )
 from cognigraph.rules.mitigation import apply_policy_mitigations
 from cognigraph.schemas.findings import FindingSeverity
@@ -262,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
         except SuppressionError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
+    groups = rank_groups(groups, graph)
 
     if not args.quiet:
         print(format_report(findings))
@@ -303,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
             findings,
             args.html_report,
             overlay_result=overlay_result,
+            groups=groups,
         )
         print(f"HTML report exported to {args.html_report}", file=sys.stderr)
 

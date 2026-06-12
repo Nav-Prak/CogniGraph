@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 from cognigraph.schemas.findings import Finding, FindingGroup, Suppression
+
+if TYPE_CHECKING:
+    from cognigraph.graph.builder import CogniGraph
 
 
 class SuppressionError(Exception):
@@ -111,6 +115,43 @@ def apply_suppressions(
             update={"suppressed": True, "suppression_reason": suppression.reason}
         )
     return result
+
+
+def rank_groups(
+    groups: list[FindingGroup], graph: "CogniGraph | None" = None
+) -> list[FindingGroup]:
+    """Order groups for triage: highest severity first, then shortest
+    evidence path, then lowest source trust, then stable (rule, target).
+
+    Source trust requires the graph; without it that key is neutral.
+    """
+
+    def min_source_trust(group: FindingGroup) -> int:
+        if graph is None:
+            return 99
+        trusts = []
+        for finding in group.findings:
+            cs_id = finding.entities.get("context_source")
+            if cs_id is None:
+                continue
+            try:
+                trust = graph.get_node(cs_id).get("trust_level")
+            except KeyError:
+                continue
+            if trust is not None:
+                trusts.append(trust)
+        return min(trusts) if trusts else 99
+
+    def key(group: FindingGroup):
+        return (
+            -group.severity,
+            min(len(f.path) for f in group.findings),
+            min_source_trust(group),
+            group.rule_id,
+            group.target,
+        )
+
+    return sorted(groups, key=key)
 
 
 def active_groups(groups: list[FindingGroup]) -> list[FindingGroup]:

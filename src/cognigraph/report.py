@@ -740,10 +740,51 @@ def _overlay_summary_html(graph: CogniGraph, overlay_result: Any | None) -> str:
     """
 
 
+def _group_summary_html(groups: list[FindingGroup] | None) -> str:
+    if not groups:
+        return ""
+    items = []
+    for group in groups:
+        if group.suppressed:
+            badge_class, badge_label = "suppressed", "Suppressed"
+            note = group.suppression_reason or ""
+        elif group.mitigated_by:
+            badge_class, badge_label = "mitigated", "Mitigated"
+            note = f"policy '{group.mitigated_by}'"
+        else:
+            badge_class, badge_label = "active", "Active"
+            note = ""
+        severity = _SEVERITY_LABELS.get(group.severity, "UNKNOWN")
+        note_html = (
+            f'<span class="group-note">{_escape(note)}</span>' if note else ""
+        )
+        items.append(
+            f'<li><span class="group-badge {badge_class}">{badge_label}</span> '
+            f"<code>{_escape(group.rule_id)}</code> "
+            f"<strong>{_escape(group.target)}</strong> "
+            f'<span class="group-note">[{_escape(severity)}] '
+            f"{len(group.findings)} path(s)</span> {note_html}</li>"
+        )
+    return f"""
+    <section class="panel" id="finding-groups">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Triage</p>
+          <h2>Finding Groups</h2>
+        </div>
+      </div>
+      <ul class="group-list">
+        {"".join(items)}
+      </ul>
+    </section>
+"""
+
+
 def format_html_report(
     graph: CogniGraph,
     findings: list[Finding],
     overlay_result: Any | None = None,
+    groups: list[FindingGroup] | None = None,
 ) -> str:
     counts = _severity_counts(findings)
     severity_cards = "\n".join(
@@ -1068,6 +1109,35 @@ def format_html_report(
       border-radius: 8px;
       background: #fafbfd;
     }}
+    .group-list {{
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+    }}
+    .group-list li {{
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fafbfd;
+    }}
+    .group-badge {{
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border-radius: 999px;
+      padding: 2px 10px;
+    }}
+    .group-badge.active {{ background: #fde8e6; color: var(--danger); }}
+    .group-badge.mitigated {{ background: #e3efe9; color: var(--accent); }}
+    .group-badge.suppressed {{ background: #e8ebf0; color: var(--muted); }}
+    .group-note {{ color: var(--muted); font-size: 13px; }}
     @media print {{
       body {{ background: white; }}
       header {{ background: white; color: var(--ink); border-bottom: 1px solid var(--line); }}
@@ -1097,6 +1167,8 @@ def format_html_report(
         {severity_cards}
       </div>
     </section>
+
+    {_group_summary_html(groups)}
 
     {_overlay_summary_html(graph, overlay_result)}
 
@@ -1154,8 +1226,11 @@ def export_html_report(
     findings: list[Finding],
     path: Path,
     overlay_result: Any | None = None,
+    groups: list[FindingGroup] | None = None,
 ) -> None:
     path.write_text(
-        format_html_report(graph, findings, overlay_result=overlay_result),
+        format_html_report(
+            graph, findings, overlay_result=overlay_result, groups=groups
+        ),
         encoding="utf-8",
     )

@@ -105,7 +105,7 @@ Structured JSON findings include the rule ID, severity, path, entities, and dete
 
 ### Finding Groups, Suppressions, and CI Gating
 
-Findings are grouped by (rule, target) — e.g. all paths by which low-trust context reaches `SecretRead` form one group, with the individual paths kept as evidence. The text report prints the group summary after the per-path findings.
+Findings are grouped by (rule, target) — e.g. all paths by which low-trust context reaches `SecretRead` form one group, with the individual paths kept as evidence. Groups are ranked for triage (highest severity, then shortest path, then lowest source trust) in both the text summary and the HTML report's Finding Groups panel, which badges each group as active, mitigated, or suppressed.
 
 Reviewed, accepted risks can be suppressed:
 
