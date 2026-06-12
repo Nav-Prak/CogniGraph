@@ -1,39 +1,142 @@
 {
+  "schema": "cognigraph.trace.v1",
   "trace_id": "demo-trace-001",
+  "session_id": "demo-session-001",
+  "source": {
+    "type": "internal-json",
+    "name": "CogniGraph example"
+  },
   "events": [
     {
+      "id": "event-001",
       "timestamp": "2026-05-01T10:00:00Z",
-      "source_id": "external_webpage",
-      "target_id": "research_planner",
+      "source_ref": {
+        "id": "external_webpage",
+        "type": "ContextSource",
+        "name": "External webpage"
+      },
+      "target_ref": {
+        "id": "research_planner",
+        "type": "Agent",
+        "name": "Research planner"
+      },
       "edge_type": "PASSED_TO",
+      "status": "ok",
+      "origin": {
+        "trace_id": "demo-trace-001",
+        "span_id": "span-001"
+      },
+      "evidence": {
+        "operation": "retrieval"
+      },
       "metadata": {"trigger": "rag_retrieval"}
     },
     {
+      "id": "event-002",
       "timestamp": "2026-05-01T10:00:01Z",
-      "source_id": "research_planner",
-      "target_id": "filesystem_tool",
+      "source_ref": {
+        "id": "research_planner",
+        "type": "Agent",
+        "name": "Research planner"
+      },
+      "target_ref": {
+        "id": "filesystem_tool",
+        "type": "Tool",
+        "name": "filesystem_tool"
+      },
       "edge_type": "INVOKED",
+      "status": "ok",
+      "duration_ms": 120,
+      "origin": {
+        "trace_id": "demo-trace-001",
+        "span_id": "span-002",
+        "parent_span_id": "span-001"
+      },
+      "evidence": {
+        "operation": "tools/call",
+        "tool_name": "filesystem_tool"
+      },
       "metadata": {"action": "read_file"}
     },
     {
+      "id": "event-003",
       "timestamp": "2026-05-01T10:00:02Z",
-      "source_id": "filesystem_tool",
-      "target_id": "ssh_private_key",
+      "source_ref": {
+        "id": "filesystem_tool",
+        "type": "Tool",
+        "name": "filesystem_tool"
+      },
+      "target_ref": {
+        "id": "ssh_private_key",
+        "type": "Resource",
+        "name": "SSH private key"
+      },
       "edge_type": "READ_FROM",
+      "status": "ok",
+      "duration_ms": 34,
+      "origin": {
+        "trace_id": "demo-trace-001",
+        "span_id": "span-003",
+        "parent_span_id": "span-002"
+      },
+      "evidence": {
+        "operation": "resource/read",
+        "resource_uri": "~/.ssh/id_rsa"
+      },
       "metadata": {"path": "~/.ssh/id_rsa"}
     },
     {
+      "id": "event-004",
       "timestamp": "2026-05-01T10:00:03Z",
-      "source_id": "research_planner",
-      "target_id": "github_tool",
+      "source_ref": {
+        "id": "research_planner",
+        "type": "Agent",
+        "name": "Research planner"
+      },
+      "target_ref": {
+        "id": "github_tool",
+        "type": "Tool",
+        "name": "github_tool"
+      },
       "edge_type": "INVOKED",
+      "status": "ok",
+      "duration_ms": 178,
+      "origin": {
+        "trace_id": "demo-trace-001",
+        "span_id": "span-004",
+        "parent_span_id": "span-001"
+      },
+      "evidence": {
+        "operation": "tools/call",
+        "tool_name": "github_tool"
+      },
       "metadata": {"action": "push_commit"}
     },
     {
+      "id": "event-005",
       "timestamp": "2026-05-01T10:00:04Z",
-      "source_id": "github_tool",
-      "target_id": "github_repository",
+      "source_ref": {
+        "id": "github_tool",
+        "type": "Tool",
+        "name": "github_tool"
+      },
+      "target_ref": {
+        "id": "github_repository",
+        "type": "Resource",
+        "name": "GitHub repository"
+      },
       "edge_type": "WROTE_TO",
+      "status": "ok",
+      "duration_ms": 52,
+      "origin": {
+        "trace_id": "demo-trace-001",
+        "span_id": "span-005",
+        "parent_span_id": "span-004"
+      },
+      "evidence": {
+        "operation": "resource/write",
+        "resource_uri": "github://repository"
+      },
       "metadata": {"ref": "refs/heads/main"}
     }
   ]

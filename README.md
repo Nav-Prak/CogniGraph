@@ -79,8 +79,8 @@ uv run cognigraph examples/rag_mcp_unannotated.yaml --annotations examples/manua
 # Export a static HTML report with finding paths and node metadata
 uv run cognigraph examples/rag_mcp_vulnerable.yaml --html-report report.html
 
-# Preview: overlay a simple runtime trace on the static graph
-uv run cognigraph examples/rag_mcp_vulnerable.yaml --trace examples/runtime_trace_example.json --html-report report.html
+# Preview: overlay a CogniGraph Trace v1 file on the static graph
+uv run cognigraph examples/rag_mcp_vulnerable.yaml --trace examples/runtime_trace_example.json --trace-format internal-json --html-report report.html
 
 # Suppress stdout report (useful when only exporting)
 uv run cognigraph examples/rag_mcp_vulnerable.yaml --quiet --export-dot graph.dot
@@ -95,22 +95,66 @@ Structured JSON findings include the rule ID, severity, path, entities, and dete
 
 ## Runtime Trace Overlay Preview
 
-CogniGraph has a small internal JSON trace format for runtime overlays. This is a preview feature, not a core MVP requirement. It is not a direct Observal or OpenTelemetry format yet; external trace systems should map into this internal format through adapters.
+CogniGraph has a small internal JSON trace format for runtime overlays. This is a preview feature, not a core MVP requirement. External trace systems should map into this format through adapters so the graph, rules, and report code can consume one stable representation.
+
+The default adapter is `internal-json`, with compatibility aliases `internal`, `cognigraph-trace-v1`, and `json`.
 
 ```json
 {
+  "schema": "cognigraph.trace.v1",
   "trace_id": "trace-001",
+  "session_id": "session-abc",
+  "source": {
+    "type": "internal-json",
+    "name": "CogniGraph example"
+  },
   "events": [
     {
+      "id": "event-001",
       "timestamp": "2026-05-01T10:00:00Z",
-      "source_id": "external_webpage",
-      "target_id": "research_planner",
+      "source_ref": {
+        "id": "external_webpage",
+        "type": "ContextSource",
+        "name": "External webpage"
+      },
+      "target_ref": {
+        "id": "research_planner",
+        "type": "Agent",
+        "name": "Research planner"
+      },
       "edge_type": "PASSED_TO",
-      "metadata": {"trigger": "rag_retrieval"}
+      "status": "ok",
+      "duration_ms": 18,
+      "origin": {
+        "trace_id": "external-trace-id",
+        "span_id": "external-span-id",
+        "parent_span_id": "external-parent-span-id"
+      },
+      "evidence": {
+        "operation": "retrieval"
+      },
+      "attributes": {},
+      "metadata": {
+        "trigger": "rag_retrieval"
+      }
     }
   ]
 }
 ```
+
+Events may also use legacy `source_id` and `target_id` fields directly. In Trace v1, `source_ref.id` and `target_ref.id` are the graph node IDs used by the overlay. Adapters may preserve external trace IDs and span IDs in `origin`, but they should not silently create graph nodes, capabilities, resources, trust levels, or security findings.
+
+Trace adapter contract:
+
+```python
+class TraceAdapter(Protocol):
+    format_name: str
+
+    def load(self, path: Path) -> TraceLog:
+        ...
+```
+
+The core overlay only consumes `TraceLog`; source-specific parsing belongs in adapters under `cognigraph.trace.adapters`.
 
 Supported runtime edge types:
 
