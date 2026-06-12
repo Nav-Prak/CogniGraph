@@ -185,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         overlay_result = apply_overlay(graph, trace)
 
-    findings = run_all_rules(graph, config.analysis)
+    findings = run_all_rules(graph, config.analysis, config.policy)
 
     if not args.quiet:
         print(format_report(findings))

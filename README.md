@@ -330,6 +330,27 @@ The mapper only adds capabilities already declared in the fixture. It does not c
 | 3 | High | Signed internal data |
 | 4 | Privileged | Local filesystem, system config |
 
+`trust_level` is optional on context sources. When omitted, it defaults by `source_type`: `webpage` and `external_api` → 0, `retrieval` and `user_input` → 1, `memory` → 2. An explicit value always wins.
+
+### Policy Configuration
+
+Rule thresholds and the dangerous-pair list are configurable through an optional `policy` block (defaults shown — omitting the block keeps current behavior exactly):
+
+```yaml
+policy:
+  critical_severity: 3        # capability severity >= this is "critical" (R001, R004, R005)
+  sensitive_sensitivity: 3    # resource sensitivity >= this is "sensitive" (R002)
+  low_trust_max: 1            # trust_level <= this is "low trust" (R001, R002, R005)
+  dangerous_pairs:            # capability pairs R003 looks for
+    - [SecretRead, ExternalNetworkSend]
+    - [FilesystemRead, EmailSend]
+    - [ShellExecution, ExternalNetworkSend]
+    - [GitHubRead, GitHubPush]
+    - [BrowserAutomation, CredentialAccess]
+```
+
+Both the in-memory engine and the Neo4j Cypher rules honor the policy block.
+
 ### Relationships
 
 Edges are derived from the fixture's `consumes`, `can_invoke`, `capabilities`, `mcp_server`, and `capability_bindings` fields:

@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 
 from cognigraph.fixture.loader import validate_references
-from cognigraph.fixture.models import FixtureConfig
+from cognigraph.fixture.models import FixtureConfig, PolicyConfig
 
 
 class CollectError(Exception):
@@ -203,6 +203,9 @@ def collect_from_mcp_config(
 
 def fixture_to_yaml(config: FixtureConfig) -> str:
     data = config.model_dump(exclude_none=True, mode="json")
+    # A default policy block is pure noise in a skeleton — omit it.
+    if data.get("policy") == PolicyConfig().model_dump(mode="json"):
+        del data["policy"]
     # Drop empty collections so the skeleton stays readable.
     data = {key: value for key, value in data.items() if value}
     return yaml.safe_dump(data, sort_keys=False, default_flow_style=False)

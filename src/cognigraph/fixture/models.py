@@ -1,6 +1,23 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from cognigraph.schemas.enums import ResourceType, SourceType
+
+DEFAULT_DANGEROUS_PAIRS: tuple[tuple[str, str], ...] = (
+    ("SecretRead", "ExternalNetworkSend"),
+    ("FilesystemRead", "EmailSend"),
+    ("ShellExecution", "ExternalNetworkSend"),
+    ("GitHubRead", "GitHubPush"),
+    ("BrowserAutomation", "CredentialAccess"),
+)
+
+# Defaults applied when a context source omits trust_level.
+SOURCE_TYPE_TRUST_DEFAULTS: dict[SourceType, int] = {
+    SourceType.WEBPAGE: 0,
+    SourceType.EXTERNAL_API: 0,
+    SourceType.RETRIEVAL: 1,
+    SourceType.USER_INPUT: 1,
+    SourceType.MEMORY: 2,
+}
 
 
 class AnalysisConfig(BaseModel, frozen=True):
@@ -9,10 +26,33 @@ class AnalysisConfig(BaseModel, frozen=True):
     overexposure_agent_threshold: int = Field(default=3, ge=1)
 
 
+class PolicyConfig(BaseModel, frozen=True):
+    critical_severity: int = Field(default=3, ge=1, le=4)
+    sensitive_sensitivity: int = Field(default=3, ge=1, le=4)
+    low_trust_max: int = Field(default=1, ge=0, le=4)
+    dangerous_pairs: list[tuple[str, str]] = Field(
+        default_factory=lambda: [tuple(pair) for pair in DEFAULT_DANGEROUS_PAIRS]
+    )
+
+
 class ContextSourceConfig(BaseModel, frozen=True):
     id: str
     source_type: SourceType
     trust_level: int = Field(ge=0, le=4)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_trust_from_source_type(cls, data):
+        if isinstance(data, dict) and data.get("trust_level") is None:
+            try:
+                source_type = SourceType(data.get("source_type"))
+            except ValueError:
+                return data
+            data = {
+                **data,
+                "trust_level": SOURCE_TYPE_TRUST_DEFAULTS[source_type],
+            }
+        return data
 
 
 class AgentConfig(BaseModel, frozen=True):
@@ -63,6 +103,7 @@ class CapabilityBinding(BaseModel, frozen=True):
 
 class FixtureConfig(BaseModel, frozen=True):
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
+    policy: PolicyConfig = Field(default_factory=PolicyConfig)
     context_sources: list[ContextSourceConfig] = Field(default_factory=list)
     agents: list[AgentConfig] = Field(default_factory=list)
     tools: list[ToolConfig] = Field(default_factory=list)

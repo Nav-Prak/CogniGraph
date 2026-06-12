@@ -1,14 +1,16 @@
-from cognigraph.fixture.models import AnalysisConfig
+from cognigraph.fixture.models import (
+    DEFAULT_DANGEROUS_PAIRS,
+    AnalysisConfig,
+    PolicyConfig,
+)
 from cognigraph.graph.builder import CogniGraph
 from cognigraph.schemas.enums import EdgeType, NodeType
 from cognigraph.schemas.findings import Finding, FindingSeverity
 
+# Kept for backwards compatibility; the canonical default lives in
+# fixture/models.py and per-fixture overrides come from the policy block.
 DANGEROUS_PAIRS: list[tuple[str, str]] = [
-    ("SecretRead", "ExternalNetworkSend"),
-    ("FilesystemRead", "EmailSend"),
-    ("ShellExecution", "ExternalNetworkSend"),
-    ("GitHubRead", "GitHubPush"),
-    ("BrowserAutomation", "CredentialAccess"),
+    tuple(pair) for pair in DEFAULT_DANGEROUS_PAIRS
 ]
 
 RECOMMENDED_CONTROLS: dict[str, str] = {
@@ -57,12 +59,15 @@ def _within_path_length(path: list[str], config: AnalysisConfig) -> bool:
 
 
 def low_trust_to_critical_capability(
-    graph: CogniGraph, config: AnalysisConfig
+    graph: CogniGraph,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
+    policy = policy or PolicyConfig()
     findings: list[Finding] = []
     for cs_id in graph.get_nodes_by_type(NodeType.CONTEXT_SOURCE):
         cs = graph.get_node(cs_id)
-        if cs["trust_level"] > 1:
+        if cs["trust_level"] > policy.low_trust_max:
             continue
         for agent_id in graph.get_successors(cs_id, EdgeType.CONSUMED_BY):
             cap_paths = _reachable_capabilities_with_paths(
@@ -70,7 +75,7 @@ def low_trust_to_critical_capability(
             )
             for cap_id, tool_path in cap_paths.items():
                 cap = graph.get_node(cap_id)
-                if cap["severity"] >= 3:
+                if cap["severity"] >= policy.critical_severity:
                     path = [cs_id] + tool_path
                     if not _within_path_length(path, config):
                         continue
@@ -82,7 +87,8 @@ def low_trust_to_critical_capability(
                             f"capability '{cap_id}' (severity {cap['severity']})"
                         ),
                         severity=FindingSeverity.CRITICAL
-                        if cap["severity"] >= 4 else FindingSeverity.HIGH,
+                        if cap["severity"] > policy.critical_severity
+                        else FindingSeverity.HIGH,
                         path=path,
                         entities={
                             "context_source": cs_id,
@@ -95,12 +101,15 @@ def low_trust_to_critical_capability(
 
 
 def low_trust_to_sensitive_resource(
-    graph: CogniGraph, config: AnalysisConfig
+    graph: CogniGraph,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
+    policy = policy or PolicyConfig()
     findings: list[Finding] = []
     for cs_id in graph.get_nodes_by_type(NodeType.CONTEXT_SOURCE):
         cs = graph.get_node(cs_id)
-        if cs["trust_level"] > 1:
+        if cs["trust_level"] > policy.low_trust_max:
             continue
         for agent_id in graph.get_successors(cs_id, EdgeType.CONSUMED_BY):
             cap_paths = _reachable_capabilities_with_paths(
@@ -109,7 +118,7 @@ def low_trust_to_sensitive_resource(
             for cap_id, tool_path in cap_paths.items():
                 for res_id in graph.get_resources_of_capability(cap_id):
                     res = graph.get_node(res_id)
-                    if res["sensitivity"] >= 3:
+                    if res["sensitivity"] >= policy.sensitive_sensitivity:
                         path = [cs_id] + tool_path + [res_id]
                         if not _within_path_length(path, config):
                             continue
@@ -122,7 +131,8 @@ def low_trust_to_sensitive_resource(
                                 f"via capability '{cap_id}'"
                             ),
                             severity=FindingSeverity.CRITICAL
-                            if res["sensitivity"] >= 4 else FindingSeverity.HIGH,
+                            if res["sensitivity"] > policy.sensitive_sensitivity
+                            else FindingSeverity.HIGH,
                             path=path,
                             entities={
                                 "context_source": cs_id,
@@ -136,15 +146,18 @@ def low_trust_to_sensitive_resource(
 
 
 def dangerous_capability_composition(
-    graph: CogniGraph, config: AnalysisConfig
+    graph: CogniGraph,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
+    policy = policy or PolicyConfig()
     findings: list[Finding] = []
     for agent_id in graph.get_nodes_by_type(NodeType.AGENT):
         cap_paths = _reachable_capabilities_with_paths(
             graph, agent_id, config.max_tool_invocation_depth
         )
         cap_ids = set(cap_paths.keys())
-        for cap_a, cap_b in DANGEROUS_PAIRS:
+        for cap_a, cap_b in policy.dangerous_pairs:
             if cap_a in cap_ids and cap_b in cap_ids:
                 path = [agent_id, cap_a, cap_b]
                 if not _within_path_length(path, config):
@@ -169,8 +182,11 @@ def dangerous_capability_composition(
 
 
 def overprivileged_mcp_exposure(
-    graph: CogniGraph, config: AnalysisConfig
+    graph: CogniGraph,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
+    policy = policy or PolicyConfig()
     findings: list[Finding] = []
     for server_id in graph.get_nodes_by_type(NodeType.MCP_SERVER):
         tools_on_server = graph.get_predecessors(server_id, EdgeType.USES_SERVER)
@@ -178,7 +194,7 @@ def overprivileged_mcp_exposure(
         for tool_id in tools_on_server:
             for cap_id in graph.get_capabilities_of_tool(tool_id):
                 cap = graph.get_node(cap_id)
-                if cap["severity"] >= 3:
+                if cap["severity"] >= policy.critical_severity:
                     critical_tools.append(tool_id)
                     break
 
@@ -214,18 +230,21 @@ def overprivileged_mcp_exposure(
 
 
 def trust_boundary_crossing(
-    graph: CogniGraph, config: AnalysisConfig
+    graph: CogniGraph,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
+    policy = policy or PolicyConfig()
     findings: list[Finding] = []
     for agent_id in graph.get_nodes_by_type(NodeType.AGENT):
         agent = graph.get_node(agent_id)
-        if agent["trust_level"] < 2:
+        if agent["trust_level"] <= policy.low_trust_max:
             continue
 
         low_trust_sources: list[str] = []
         for cs_id in graph.get_predecessors(agent_id, EdgeType.CONSUMED_BY):
             cs = graph.get_node(cs_id)
-            if cs["trust_level"] <= 1:
+            if cs["trust_level"] <= policy.low_trust_max:
                 low_trust_sources.append(cs_id)
 
         if not low_trust_sources:
@@ -236,7 +255,7 @@ def trust_boundary_crossing(
         )
         for cap_id, tool_path in cap_paths.items():
             cap = graph.get_node(cap_id)
-            if cap["severity"] >= 3:
+            if cap["severity"] >= policy.critical_severity:
                 for cs_id in low_trust_sources:
                     path = [cs_id] + tool_path
                     if not _within_path_length(path, config):
@@ -272,10 +291,12 @@ ALL_RULES = [
 
 
 def run_all_rules(
-    graph: CogniGraph, config: AnalysisConfig
+    graph: CogniGraph,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
     findings: list[Finding] = []
     for rule in ALL_RULES:
-        findings.extend(rule(graph, config))
+        findings.extend(rule(graph, config, policy))
     findings.sort(key=lambda f: (f.rule_id, f.path))
     return findings

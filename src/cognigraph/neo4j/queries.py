@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from cognigraph.fixture.models import AnalysisConfig
+from cognigraph.fixture.models import AnalysisConfig, PolicyConfig
 from cognigraph.neo4j.client import Neo4jClient
-from cognigraph.rules.engine import DANGEROUS_PAIRS, RECOMMENDED_CONTROLS
+from cognigraph.rules.engine import RECOMMENDED_CONTROLS
 from cognigraph.schemas.findings import Finding, FindingSeverity
 
 
@@ -15,8 +15,11 @@ def _within_path_length(path: list[str], config: AnalysisConfig) -> bool:
 
 
 def low_trust_to_critical_capability(
-    client: Neo4jClient, config: AnalysisConfig
+    client: Neo4jClient,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
+    policy = policy or PolicyConfig()
     depth = config.max_tool_invocation_depth
     cypher = (
         "MATCH path = "
@@ -24,11 +27,15 @@ def low_trust_to_critical_capability(
         "(agent:Agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
         "(tool:Tool)-[:EXPOSES_CAPABILITY]->"
         "(capability:Capability) "
-        "WHERE source.trust_level <= 1 "
-        "AND capability.severity >= 3 "
+        "WHERE source.trust_level <= $low_trust_max "
+        "AND capability.severity >= $critical_severity "
         "RETURN source, capability, path"
     )
-    rows = client.run_query(cypher)
+    rows = client.run_query(
+        cypher,
+        low_trust_max=policy.low_trust_max,
+        critical_severity=policy.critical_severity,
+    )
     findings: list[Finding] = []
     seen: set[tuple[str, str]] = set()
     for row in rows:
@@ -49,7 +56,9 @@ def low_trust_to_critical_capability(
                 f"Low-trust context '{src['id']}' can reach "
                 f"capability '{cap['id']}' (severity {cap['severity']})"
             ),
-            severity=FindingSeverity.CRITICAL if cap["severity"] >= 4 else FindingSeverity.HIGH,
+            severity=FindingSeverity.CRITICAL
+            if cap["severity"] > policy.critical_severity
+            else FindingSeverity.HIGH,
             path=full_path,
             entities={
                 "context_source": src["id"],
@@ -62,8 +71,11 @@ def low_trust_to_critical_capability(
 
 
 def low_trust_to_sensitive_resource(
-    client: Neo4jClient, config: AnalysisConfig
+    client: Neo4jClient,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
+    policy = policy or PolicyConfig()
     depth = config.max_tool_invocation_depth
     cypher = (
         "MATCH path = "
@@ -72,11 +84,15 @@ def low_trust_to_sensitive_resource(
         "(tool:Tool)-[:EXPOSES_CAPABILITY]->"
         "(capability:Capability)-[:CAN_ACCESS_RESOURCE]->"
         "(resource:Resource) "
-        "WHERE source.trust_level <= 1 "
-        "AND resource.sensitivity >= 3 "
+        "WHERE source.trust_level <= $low_trust_max "
+        "AND resource.sensitivity >= $sensitive_sensitivity "
         "RETURN source, capability, resource, path"
     )
-    rows = client.run_query(cypher)
+    rows = client.run_query(
+        cypher,
+        low_trust_max=policy.low_trust_max,
+        sensitive_sensitivity=policy.sensitive_sensitivity,
+    )
     findings: list[Finding] = []
     seen: set[tuple[str, str]] = set()
     for row in rows:
@@ -99,7 +115,9 @@ def low_trust_to_sensitive_resource(
                 f"resource '{res['id']}' (sensitivity {res['sensitivity']}) "
                 f"via capability '{cap['id']}'"
             ),
-            severity=FindingSeverity.CRITICAL if res["sensitivity"] >= 4 else FindingSeverity.HIGH,
+            severity=FindingSeverity.CRITICAL
+            if res["sensitivity"] > policy.sensitive_sensitivity
+            else FindingSeverity.HIGH,
             path=full_path,
             entities={
                 "context_source": src["id"],
@@ -113,15 +131,12 @@ def low_trust_to_sensitive_resource(
 
 
 def dangerous_capability_composition(
-    client: Neo4jClient, config: AnalysisConfig
+    client: Neo4jClient,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
+    policy = policy or PolicyConfig()
     depth = config.max_tool_invocation_depth
-    where_clauses = []
-    for cap_a, cap_b in DANGEROUS_PAIRS:
-        where_clauses.append(
-            f'(cap1.id = "{cap_a}" AND cap2.id = "{cap_b}")'
-        )
-    where_str = " OR ".join(where_clauses)
     cypher = (
         "MATCH "
         "(agent:Agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
@@ -130,10 +145,13 @@ def dangerous_capability_composition(
         "(agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
         "(:Tool)-[:EXPOSES_CAPABILITY]->"
         "(cap2:Capability) "
-        "WHERE " + where_str + " "
+        "WHERE [cap1.id, cap2.id] IN $pairs "
         "RETURN DISTINCT agent, cap1, cap2"
     )
-    rows = client.run_query(cypher)
+    rows = client.run_query(
+        cypher,
+        pairs=[list(pair) for pair in policy.dangerous_pairs],
+    )
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
     for row in rows:
@@ -167,20 +185,27 @@ def dangerous_capability_composition(
 
 
 def overprivileged_mcp_exposure(
-    client: Neo4jClient, config: AnalysisConfig
+    client: Neo4jClient,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
+    policy = policy or PolicyConfig()
     threshold = config.overexposure_agent_threshold
     depth = config.max_tool_invocation_depth
     cypher = (
         "MATCH (agent:Agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
         "(tool:Tool)-[:USES_SERVER]->(server:MCPServer), "
         "(tool)-[:EXPOSES_CAPABILITY]->(cap:Capability) "
-        "WHERE cap.severity >= 3 "
+        "WHERE cap.severity >= $critical_severity "
         "WITH server, collect(DISTINCT agent.id) AS agents "
         "WHERE size(agents) >= $threshold "
         "RETURN server, agents"
     )
-    rows = client.run_query(cypher, threshold=threshold)
+    rows = client.run_query(
+        cypher,
+        threshold=threshold,
+        critical_severity=policy.critical_severity,
+    )
     findings: list[Finding] = []
     for row in rows:
         server = row["server"]
@@ -205,8 +230,11 @@ def overprivileged_mcp_exposure(
 
 
 def trust_boundary_crossing(
-    client: Neo4jClient, config: AnalysisConfig
+    client: Neo4jClient,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
+    policy = policy or PolicyConfig()
     depth = config.max_tool_invocation_depth
     cypher = (
         "MATCH path = "
@@ -214,12 +242,16 @@ def trust_boundary_crossing(
         "(agent:Agent)-[:CAN_INVOKE*1.." + str(depth) + "]->"
         "(tool:Tool)-[:EXPOSES_CAPABILITY]->"
         "(capability:Capability) "
-        "WHERE agent.trust_level >= 2 "
-        "AND source.trust_level <= 1 "
-        "AND capability.severity >= 3 "
+        "WHERE agent.trust_level > $low_trust_max "
+        "AND source.trust_level <= $low_trust_max "
+        "AND capability.severity >= $critical_severity "
         "RETURN source, agent, capability, path"
     )
-    rows = client.run_query(cypher)
+    rows = client.run_query(
+        cypher,
+        low_trust_max=policy.low_trust_max,
+        critical_severity=policy.critical_severity,
+    )
     findings: list[Finding] = []
     seen: set[tuple[str, str, str]] = set()
     for row in rows:
@@ -264,10 +296,12 @@ ALL_CYPHER_RULES = [
 
 
 def run_all_cypher_rules(
-    client: Neo4jClient, config: AnalysisConfig
+    client: Neo4jClient,
+    config: AnalysisConfig,
+    policy: PolicyConfig | None = None,
 ) -> list[Finding]:
     findings: list[Finding] = []
     for rule in ALL_CYPHER_RULES:
-        findings.extend(rule(client, config))
+        findings.extend(rule(client, config, policy))
     findings.sort(key=lambda f: (f.rule_id, f.path))
     return findings
