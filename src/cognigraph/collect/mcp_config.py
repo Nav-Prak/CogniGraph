@@ -3,16 +3,23 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import yaml
 
 from cognigraph.fixture.loader import validate_references
 from cognigraph.fixture.models import FixtureConfig, PolicyConfig
 
+if TYPE_CHECKING:
+    from cognigraph.collect.introspect import IntrospectedTool
+
 
 class CollectError(Exception):
     pass
+
+
+class IntrospectionUnavailableError(CollectError):
+    """The optional 'mcp' dependency needed for --introspect is missing."""
 
 
 # The capability ids the heuristic mapper knows, with severities from the
@@ -118,6 +125,16 @@ def _sanitize_id(name: str) -> str:
     return sanitized
 
 
+def _unique_id(base: str, used: set[str]) -> str:
+    candidate = base
+    suffix = 2
+    while candidate in used:
+        candidate = f"{base}_{suffix}"
+        suffix += 1
+    used.add(candidate)
+    return candidate
+
+
 def _describe_server(name: str, entry: dict[str, Any]) -> str:
     command = entry.get("command")
     if command:
@@ -138,6 +155,9 @@ def collect_from_mcp_config(
     agent_id: str = DEFAULT_AGENT_ID,
     agent_trust_level: int = DEFAULT_AGENT_TRUST_LEVEL,
     seed_capabilities: bool = True,
+    introspector: Callable[[str, dict[str, Any]], list[IntrospectedTool]]
+    | None = None,
+    warn: Callable[[str], None] | None = None,
 ) -> FixtureConfig:
     """Build a fixture skeleton from an MCP client config file.
 
@@ -145,13 +165,20 @@ def collect_from_mcp_config(
     annotation workflow needs: one stub tool per server, one host agent that
     can invoke every tool, and a user_input context source. Capability
     semantics are intentionally left to --annotations / --infer-capabilities.
+
+    When an `introspector` is supplied (the --introspect flag), each server
+    is asked for its real tools via tools/list and per-tool nodes replace
+    the stub; a server that fails introspection degrades back to its stub
+    with a warning, so one unreachable server never sinks the collection.
     """
     raw = _load_config(path)
     entries = _server_entries(raw, path)
     if not entries:
         raise CollectError(f"Config '{path}' declares no MCP servers")
 
-    used_ids: set[str] = set()
+    emit_warning = warn or (lambda message: None)
+    used_server_ids: set[str] = set()
+    used_tool_ids: set[str] = set()
     servers: list[dict[str, Any]] = []
     tools: list[dict[str, Any]] = []
     for name, entry in entries.items():
@@ -159,16 +186,44 @@ def collect_from_mcp_config(
             raise CollectError(
                 f"Server entry '{name}' in '{path}' is not an object"
             )
-        server_id = _sanitize_id(name)
-        suffix = 2
-        while server_id in used_ids:
-            server_id = f"{_sanitize_id(name)}_{suffix}"
-            suffix += 1
-        used_ids.add(server_id)
+        server_id = _unique_id(_sanitize_id(name), used_server_ids)
         servers.append({"id": server_id})
+
+        introspected: list[IntrospectedTool] | None = None
+        if introspector is not None:
+            try:
+                introspected = introspector(name, entry)
+            except IntrospectionUnavailableError:
+                raise
+            except Exception as e:
+                emit_warning(
+                    f"Introspection failed for server '{name}' ({e}); "
+                    "falling back to a stub tool"
+                )
+
+        if introspected is not None:
+            if not introspected:
+                emit_warning(f"Server '{name}' reported no tools")
+            for info in introspected:
+                tool_id = _unique_id(
+                    f"{server_id}_{_sanitize_id(info.name)}", used_tool_ids
+                )
+                description = f"Tool '{info.name}' on MCP server '{name}'"
+                if info.description:
+                    description = f"{description}: {info.description}"
+                tools.append(
+                    {
+                        "id": tool_id,
+                        "description": description,
+                        "mcp_server": server_id,
+                        "capabilities": [],
+                    }
+                )
+            continue
+
         tools.append(
             {
-                "id": f"{server_id}_tool",
+                "id": _unique_id(f"{server_id}_tool", used_tool_ids),
                 "description": _describe_server(name, entry),
                 "mcp_server": server_id,
                 "capabilities": [],

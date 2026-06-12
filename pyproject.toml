@@ -11,10 +11,16 @@ dependencies = [
     "neo4j>=5.0",
 ]
 
+[project.optional-dependencies]
+introspect = [
+    "mcp>=1.0",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    "mcp>=1.0",
 ]
 
 [project.scripts]

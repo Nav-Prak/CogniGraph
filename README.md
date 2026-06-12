@@ -259,6 +259,18 @@ The collector emits exactly what the config proves, plus minimal scaffolding:
 - one `host_agent` (trust 2) that consumes `user_input` (trust 1) and can invoke every tool — modeling the real topology of an MCP client app
 - the standard capability taxonomy, seeded so annotation files validate immediately (disable with `--no-seed-capabilities`)
 
+### Live Introspection (`--introspect`)
+
+Configs declare servers, not tools, so the default skeleton under-models servers that expose many tools. With `--introspect`, the collector connects to each configured server, calls `tools/list`, and emits one tool node per real tool (`<server>_<tool>`) with the server-provided name and description — which feed directly into `--annotations` and `--infer-capabilities`:
+
+```bash
+uv sync --extra introspect   # or: pip install 'cognigraph[introspect]'
+uv run cognigraph collect my_mcp_config.json --introspect -o my_system.yaml
+uv run cognigraph my_system.yaml --infer-capabilities
+```
+
+Be deliberate about what you point this at: introspecting a stdio server **spawns its configured command as a process**, and introspecting a remote server contacts its URL. It is never the default, and it requires the optional `mcp` dependency (the `introspect` extra). A server that cannot be reached within `--introspect-timeout` seconds (default 10) degrades to its stub tool with a warning, so one dead server never sinks the collection. Introspection enumerates structure only — tool names and descriptions — and still never invents capability semantics.
+
 The collector never invents capability semantics — that mapping stays human-reviewed. Complete the workflow with annotations:
 
 ```bash

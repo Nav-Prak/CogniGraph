@@ -2,6 +2,10 @@ import argparse
 import sys
 from pathlib import Path
 
+from cognigraph.collect.introspect import (
+    ensure_introspection_available,
+    make_introspector,
+)
 from cognigraph.collect.mcp_config import (
     DEFAULT_AGENT_ID,
     DEFAULT_AGENT_TRUST_LEVEL,
@@ -75,7 +79,34 @@ def run_collect(argv: list[str]) -> int:
         action="store_true",
         help="Do not seed the standard capability taxonomy into the fixture",
     )
+    parser.add_argument(
+        "--introspect",
+        action="store_true",
+        help=(
+            "Connect to each configured server and enumerate its real tools "
+            "via tools/list, replacing the one-stub-per-server default. "
+            "Spawns stdio server commands and contacts remote URLs - only "
+            "use on configs you trust. Requires the optional 'mcp' "
+            "dependency (pip install 'cognigraph[introspect]')."
+        ),
+    )
+    parser.add_argument(
+        "--introspect-timeout",
+        type=float,
+        default=10.0,
+        metavar="SECONDS",
+        help="Per-server timeout for --introspect (default: 10)",
+    )
     args = parser.parse_args(argv)
+
+    introspector = None
+    if args.introspect:
+        try:
+            ensure_introspection_available()
+        except CollectError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        introspector = make_introspector(args.introspect_timeout)
 
     try:
         config = collect_from_mcp_config(
@@ -83,6 +114,8 @@ def run_collect(argv: list[str]) -> int:
             agent_id=args.agent_id,
             agent_trust_level=args.agent_trust_level,
             seed_capabilities=not args.no_seed_capabilities,
+            introspector=introspector,
+            warn=lambda message: print(f"Warning: {message}", file=sys.stderr),
         )
     except CollectError as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -90,10 +123,11 @@ def run_collect(argv: list[str]) -> int:
 
     fixture_yaml = fixture_to_yaml(config)
     if args.output:
+        tool_word = "tool(s)" if args.introspect else "tool stub(s)"
         args.output.write_text(fixture_yaml, encoding="utf-8")
         print(
             f"Fixture skeleton written to {args.output} "
-            f"({len(config.mcp_servers)} server(s), {len(config.tools)} tool stub(s)). "
+            f"({len(config.mcp_servers)} server(s), {len(config.tools)} {tool_word}). "
             "Next: declare tool capabilities via --annotations or "
             "--infer-capabilities, then run the analyzer.",
             file=sys.stderr,
