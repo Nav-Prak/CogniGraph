@@ -191,9 +191,56 @@ Overlay semantics:
 
 Unannotated spans are ignored. This adapter does not infer security semantics from arbitrary telemetry; it only normalizes human- or instrumentation-supplied CogniGraph attributes.
 
+## Collecting a Fixture from MCP Client Configs
+
+Instead of hand-writing a fixture, `cognigraph collect` reads the MCP config your client already uses and emits a fixture skeleton:
+
+```bash
+# From a Claude Desktop / Claude Code / Cursor config (mcpServers key)
+uv run cognigraph collect ~/path/to/claude_desktop_config.json -o my_system.yaml
+
+# From a VS Code config (servers key, JSONC tolerated)
+uv run cognigraph collect .vscode/mcp.json -o my_system.yaml
+
+# Try it with the bundled sample config
+uv run cognigraph collect fixtures/sample_mcp_config.json -o my_system.yaml
+```
+
+The collector emits exactly what the config proves, plus minimal scaffolding:
+
+- one `MCPServer` node per configured server
+- one stub tool per server (`<server>_tool`, empty capabilities) with the command or URL recorded in its description
+- one `host_agent` (trust 2) that consumes `user_input` (trust 1) and can invoke every tool — modeling the real topology of an MCP client app
+- the standard capability taxonomy, seeded so annotation files validate immediately (disable with `--no-seed-capabilities`)
+
+The collector never invents capability semantics — that mapping stays human-reviewed. Complete the workflow with annotations:
+
+```bash
+# 1. Collect the skeleton
+uv run cognigraph collect fixtures/sample_mcp_config.json -o my_system.yaml
+
+# 2. Declare what each tool can actually do (or preview with --infer-capabilities)
+cat > my_annotations.yaml <<'EOF'
+tool_capability_annotations:
+  filesystem_tool:
+    capabilities:
+      - SecretRead
+      - FilesystemRead
+  github_tool:
+    capabilities:
+      - GitHubPush
+      - ExternalNetworkSend
+EOF
+
+# 3. Analyze
+uv run cognigraph my_system.yaml --annotations my_annotations.yaml --html-report report.html
+```
+
+`collect` exits `0` on success and `1` on error; it never produces findings itself.
+
 ## Writing a Fixture
 
-A fixture is a YAML file that declares your system's components and their relationships. Here's a minimal example:
+A fixture can be written by hand or collected from a real MCP client config (see below). Here's a minimal hand-written example:
 
 ```yaml
 analysis:

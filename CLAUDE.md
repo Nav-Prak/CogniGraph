@@ -45,9 +45,11 @@ YAML fixture → fixture/loader.load_fixture → graph/builder.build_from_fixtur
 
 5. **`neo4j/`** — optional adapter. **`neo4j/queries.py` mirrors all five rules in Cypher and must produce identical findings to the in-memory engine** — changing a rule means changing it in both places. `tests/conftest.py` skips Neo4j tests when the container isn't reachable.
 
-6. **`trace/`** — runtime trace overlay (preview feature, not core MVP). Overlays a JSON event trace onto the static graph: direct events mark static edges as exercised, tool→resource events are projected onto capability paths, unmatched events become "runtime-only" edges.
+6. **`trace/`** — runtime trace overlay (preview feature, not core MVP). Overlays a JSON event trace onto the static graph: direct events mark static edges as exercised, tool→resource events are projected onto capability paths, unmatched events become "runtime-only" edges. Format-specific parsing lives in `trace/adapters/` (registry keyed by `--trace-format`; `internal-json` and `otlp-json` ship today) — new trace sources are new adapters, never changes to the core loader.
 
-7. **Output**: `export.py` (DOT with finding paths highlighted, graph JSON), `report.py` (text report, findings JSON, static HTML report).
+7. **`collect/`** — collectors that turn real MCP client configs (`claude_desktop_config.json`, `.mcp.json`, VS Code `.vscode/mcp.json`) into fixture skeletons via the `cognigraph collect` subcommand. Strict one-way boundary: `collect` imports `fixture.models` and emits fixtures (never findings); nothing in the analyzer imports `collect`. Collectors must stay deterministic — structure from the config, capability semantics only via annotations/heuristics.
+
+8. **Output**: `export.py` (DOT with finding paths highlighted, graph JSON), `report.py` (text report, findings JSON, static HTML report).
 
 ## Conventions
 

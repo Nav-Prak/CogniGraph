@@ -2,6 +2,13 @@ import argparse
 import sys
 from pathlib import Path
 
+from cognigraph.collect.mcp_config import (
+    DEFAULT_AGENT_ID,
+    DEFAULT_AGENT_TRUST_LEVEL,
+    CollectError,
+    collect_from_mcp_config,
+    fixture_to_yaml,
+)
 from cognigraph.export import export_dot, export_json
 from cognigraph.fixture.loader import FixtureValidationError, load_fixture
 from cognigraph.graph.builder import build_from_fixture
@@ -16,7 +23,78 @@ from cognigraph.trace.overlay import (
 )
 
 
+def run_collect(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="cognigraph collect",
+        description=(
+            "Collect a fixture skeleton from an MCP client config "
+            "(claude_desktop_config.json, .mcp.json, .cursor/mcp.json, "
+            ".vscode/mcp.json)"
+        ),
+    )
+    parser.add_argument(
+        "config",
+        type=Path,
+        help="Path to MCP client config JSON file",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        metavar="PATH",
+        help="Write fixture YAML to this path (default: stdout)",
+    )
+    parser.add_argument(
+        "--agent-id",
+        default=DEFAULT_AGENT_ID,
+        help="ID for the generated host agent",
+    )
+    parser.add_argument(
+        "--agent-trust-level",
+        type=int,
+        default=DEFAULT_AGENT_TRUST_LEVEL,
+        choices=range(0, 5),
+        help="Trust level for the generated host agent",
+    )
+    parser.add_argument(
+        "--no-seed-capabilities",
+        action="store_true",
+        help="Do not seed the standard capability taxonomy into the fixture",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        config = collect_from_mcp_config(
+            args.config,
+            agent_id=args.agent_id,
+            agent_trust_level=args.agent_trust_level,
+            seed_capabilities=not args.no_seed_capabilities,
+        )
+    except CollectError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    fixture_yaml = fixture_to_yaml(config)
+    if args.output:
+        args.output.write_text(fixture_yaml, encoding="utf-8")
+        print(
+            f"Fixture skeleton written to {args.output} "
+            f"({len(config.mcp_servers)} server(s), {len(config.tools)} tool stub(s)). "
+            "Next: declare tool capabilities via --annotations or "
+            "--infer-capabilities, then run the analyzer.",
+            file=sys.stderr,
+        )
+    else:
+        print(fixture_yaml, end="")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == "collect":
+        return run_collect(argv[1:])
+
     parser = argparse.ArgumentParser(
         prog="cognigraph",
         description="Graph-native capability reachability analysis for agentic AI systems",
