@@ -88,6 +88,10 @@ uv run cognigraph examples/rag_mcp_vulnerable.yaml --trace examples/runtime_trac
 # Preview: overlay explicit CogniGraph attributes from OTLP-style JSON spans
 uv run cognigraph fixtures/sample_fixture.yaml --trace fixtures/sample_otlp_trace.json --trace-format otlp-json --html-report report.html
 
+# Preview: overlay standard OTel GenAI/MCP semantic-convention spans (no custom attributes needed)
+uv run cognigraph collect fixtures/sample_mcp_config.json -o collected.yaml
+uv run cognigraph collected.yaml --trace fixtures/sample_genai_trace.json --trace-format otlp-genai --html-report report.html
+
 # Suppress stdout report (useful when only exporting)
 uv run cognigraph examples/rag_mcp_vulnerable.yaml --quiet --export-dot graph.dot
 
@@ -221,7 +225,19 @@ Overlay semantics:
 
 Unannotated spans are ignored. This adapter does not infer security semantics from arbitrary telemetry; it only normalizes human- or instrumentation-supplied CogniGraph attributes.
 
-## Collecting a Fixture from MCP Client Configs
+### OTel GenAI / MCP Semantic-Convention Adapter
+
+`--trace-format otlp-genai` (alias `genai`) reads the same OTLP JSON span exports but requires **no CogniGraph-specific attributes**. It maps spans that follow the OpenTelemetry GenAI agent and MCP semantic conventions:
+
+| Span signal | Mapped to |
+|-------------|-----------|
+| `gen_ai.operation.name = execute_tool` or `mcp.method.name = tools/call` (or span name `tools/call <tool>`) | An `INVOKED` runtime event |
+| `gen_ai.tool.name` / `mcp.tool.name` / the `tools/call <tool>` span name | The invoked tool's node ID |
+| `gen_ai.agent.name` (or `gen_ai.agent.id`) on the span or its nearest ancestor span | The invoking agent's node ID |
+
+Names are normalized the same way `cognigraph collect` normalizes server names, so spans emitted by an instrumented MCP host (e.g. FastMCP's built-in OTel telemetry) resolve against collected fixtures without manual mapping. Tool-call spans without a resolvable agent are skipped, and span content (prompts, messages, arguments) is never copied into trace events. Unmatched events degrade to runtime-only edges, as with any adapter.
+
+Both OTel convention families are still marked Development; the adapter pins the attribute names listed above and will be versioned deliberately if the conventions change.
 
 Instead of hand-writing a fixture, `cognigraph collect` reads the MCP config your client already uses and emits a fixture skeleton:
 

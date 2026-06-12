@@ -4,6 +4,7 @@ from pathlib import Path
 
 from cognigraph.trace.adapters.base import TraceAdapter, TraceLoadError
 from cognigraph.trace.adapters.internal_json import InternalJsonTraceAdapter
+from cognigraph.trace.adapters.otlp_genai import OtlpGenAiTraceAdapter
 from cognigraph.trace.adapters.otlp_json import OtlpJsonTraceAdapter
 from cognigraph.trace.models import TraceLog
 
@@ -42,3 +43,4 @@ register_trace_adapter(
     aliases=("internal", "cognigraph-trace-v1", "json"),
 )
 register_trace_adapter(OtlpJsonTraceAdapter())
+register_trace_adapter(OtlpGenAiTraceAdapter(), aliases=("genai",))
